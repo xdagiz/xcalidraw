@@ -13,6 +13,7 @@ const ctx = vi.hoisted(() => ({
 vi.mock("./drawings", () => ({
   getDrawings: async () => ({
     path: ctx.root || null,
+    displayPath: ctx.root || null,
     displayName: "drawings",
     configured: ctx.configured && Boolean(ctx.root),
     missing: false,

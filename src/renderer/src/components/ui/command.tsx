@@ -141,19 +141,6 @@ function CommandCollection({ ...props }: React.ComponentProps<typeof Autocomplet
   return <AutocompleteCollection data-slot="command-collection" {...props} />;
 }
 
-function CommandItem({ className, ...props }: React.ComponentProps<typeof AutocompleteItem>) {
-  return (
-    <AutocompleteItem
-      className={cn(
-        "group/command-item relative data-highlighted:bg-muted data-highlighted:text-foreground data-selected:bg-muted data-selected:text-foreground in-data-[slot=dialog-content]:rounded-lg! [&_svg]:pointer-events-none data-highlighted:**:[svg]:text-foreground data-selected:**:[svg]:text-foreground",
-        className,
-      )}
-      data-slot="command-item"
-      {...props}
-    />
-  );
-}
-
 function CommandSeparator({
   className,
   ...props
@@ -167,6 +154,18 @@ function CommandSeparator({
   )
 }
 
+function CommandItem({ className, ...props }: React.ComponentProps<typeof AutocompleteItem>) {
+  return (
+    <AutocompleteItem
+      className={cn(
+        "group/command-item relative data-highlighted:bg-muted data-highlighted:text-foreground data-selected:bg-muted data-selected:bevel data-selected:text-foreground in-data-[slot=dialog-content]:rounded-lg! [&_svg]:pointer-events-none data-highlighted:**:[svg]:text-foreground data-selected:**:[svg]:text-foreground",
+        className,
+      )}
+      data-slot="command-item"
+      {...props}
+    />
+  );
+}
 function CommandShortcut({
   className,
   ...props
@@ -175,7 +174,7 @@ function CommandShortcut({
     <span
       data-slot="command-shortcut"
       className={cn(
-        "ml-auto text-xs tracking-widest text-muted-foreground group-data-highlighted/command-item:text-foreground group-data-selected/command-item:text-foreground",
+        "ml-auto group-data-highlighted/command-item:[&_[data-slot=kbd]]:bg-foreground/[0.08] group-data-highlighted/command-item:[&_[data-slot=kbd]]:text-foreground group-data-selected/command-item:[&_[data-slot=kbd]]:bg-foreground/[0.08] group-data-selected/command-item:[&_[data-slot=kbd]]:text-foreground",
         className,
       )}
       {...props}

@@ -202,6 +202,7 @@ export const TreeRow = ({
 }) => {
   const { item, level, isFolder, isExpanded: expanded, posInSet, setSize, name: label } = row;
   const isLastSibling = posInSet === setSize - 1;
+
   const guides: ReactNode[] = [];
 
   for (let depth = 0; depth < level; depth++) {
@@ -232,20 +233,20 @@ export const TreeRow = ({
           style={{ paddingLeft: `${level * indentPx}px` }}
           className="relative flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-md text-left text-sm outline-hidden group-data-[active=true]/row:font-medium"
         >
-        {level > 0 && (
-          <span aria-hidden className="pointer-events-none absolute inset-y-0 left-0">
-            {guides}
-            <span
-              className="absolute top-1/2 border-t border-border-quiet"
-              style={{
-                left: (level - 1) * indentPx + indentPx / 2 - 1,
-                width: indentPx - 6,
-              }}
-            />
-          </span>
-        )}
-        <span
-          aria-hidden
+          {level > 0 && (
+            <span aria-hidden className="pointer-events-none absolute inset-y-0 left-0">
+              {guides}
+              <span
+                className="absolute top-1/2 border-t border-border-quiet"
+                style={{
+                  left: (level - 1) * indentPx + indentPx / 2 - 1,
+                  width: indentPx - 6,
+                }}
+              />
+            </span>
+          )}
+          <span
+            aria-hidden
           className="relative flex size-4 shrink-0 items-center justify-center text-muted-foreground"
         >
           <ChevronRightIcon
@@ -276,8 +277,16 @@ export const TreeRow = ({
       data-active={isActive ? "true" : undefined}
       data-dirty={isDirty ? "true" : undefined}
       onContextMenu={onContextMenu}
-      className="group/row relative flex h-7 w-full items-center gap-1.5 rounded-md pr-2 transition-colors outline-hidden hover:bg-sidebar-accent/60 focus-within:z-10 has-[:focus-visible]:ring-1.5 has-[:focus-visible]:ring-sidebar-ring data-[active=true]:bg-sidebar-accent"
+      className="group/row relative flex h-7 w-full items-center gap-1.5 rounded-md pr-2 outline-hidden focus-within:z-10 has-[:focus-visible]:ring-1.5 has-[:focus-visible]:ring-sidebar-ring"
     >
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute inset-y-0 right-0 rounded-md transition-colors",
+          isActive ? "bg-sidebar-accent" : "group-hover/row:bg-sidebar-accent/60",
+        )}
+        style={{ left: level > 0 ? `calc(${(level - 1) * indentPx}px + 1.375rem)` : 0 }}
+      />
       <button
         {...item.getProps()}
         type="button"
@@ -286,21 +295,21 @@ export const TreeRow = ({
         className="relative flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-md text-left text-sm outline-hidden group-data-[active=true]/row:font-medium"
       >
         {level > 0 && (
-          <span aria-hidden className="pointer-events-none absolute inset-y-0 left-0">
-            {guides}
-            <span
-              className="absolute top-1/2 border-t border-border-quiet"
-              style={{
-                left: (level - 1) * indentPx + indentPx / 2 - 1,
-                width: indentPx - 6,
-              }}
-            />
-          </span>
-        )}
-        <span
-          aria-hidden
-          className="relative flex size-4 shrink-0 items-center justify-center text-muted-foreground"
-        />
+            <span aria-hidden className="pointer-events-none absolute inset-y-0 left-0">
+              {guides}
+              <span
+                className="absolute top-1/2 border-t border-border-quiet"
+                style={{
+                  left: (level - 1) * indentPx + indentPx / 2 - 1,
+                  width: indentPx - 6,
+                }}
+              />
+            </span>
+          )}
+          <span
+            aria-hidden
+            className="relative flex size-4 shrink-0 items-center justify-center text-muted-foreground"
+          />
         <span className="relative min-w-0 flex-1 truncate text-sidebar-foreground/90 transition-colors group-hover/row:text-sidebar-foreground group-data-[active=true]/row:text-sidebar-foreground">
           {label}
         </span>
@@ -309,27 +318,35 @@ export const TreeRow = ({
             <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />
             <span className="sr-only">(unsaved changes)</span>
           </>
-        ) : timeLabel ? (
-          <span
-            data-testid="tree-row-time"
-            className="shrink-0 font-mono text-[10.5px] text-muted-foreground/80 group-hover/row:hidden group-focus-within/row:hidden"
-          >
-            {timeLabel}
-          </span>
         ) : null}
       </button>
-      {onMenuClick ? (
-        <button
-          type="button"
-          aria-label={`Actions for ${label}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            onMenuClick(event);
-          }}
-          className="hidden shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:block group-hover/row:block group-focus-within/row:block"
-        >
-          <MoreHorizontalIcon className="size-3.5" />
-        </button>
+      {(!isDirty && timeLabel) || onMenuClick ? (
+        <div className="relative grid shrink-0 items-center justify-items-end">
+          {!isDirty && timeLabel ? (
+            <span
+              data-testid="tree-row-time"
+              className={cn(
+                "col-start-1 row-start-1 font-mono text-[10.5px] text-muted-foreground/80",
+                onMenuClick && "group-hover/row:invisible group-focus-within/row:invisible",
+              )}
+            >
+              {timeLabel}
+            </span>
+          ) : null}
+          {onMenuClick ? (
+            <button
+              type="button"
+              aria-label={`Actions for ${label}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onMenuClick(event);
+              }}
+              className="pointer-events-none col-start-1 row-start-1 rounded p-0.5 text-muted-foreground opacity-0 hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/row:pointer-events-auto group-hover/row:opacity-100 group-focus-within/row:pointer-events-auto group-focus-within/row:opacity-100"
+            >
+              <MoreHorizontalIcon className="size-3.5" />
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );

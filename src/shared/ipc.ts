@@ -84,6 +84,7 @@ export const DEFAULT_THEME: ThemePreference = "system";
 
 export type DrawingInfo = {
   path: string | null;
+  displayPath: string | null;
   displayName: string | null;
   configured: boolean;
   missing: boolean;

@@ -51,6 +51,7 @@ function createFakeWatcher(): FSWatcher & {
 
 const info: DrawingInfo = {
   path: "/home/user/drawings",
+  displayPath: "~/drawings",
   displayName: "drawings",
   configured: true,
   missing: false,

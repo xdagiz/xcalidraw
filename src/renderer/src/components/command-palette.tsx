@@ -60,7 +60,17 @@ const CommandRowItem = memo(function CommandRowItem({
         {command.title}
         {row.suffix}
       </span>
-      {command.shortcut && <CommandShortcut>{formatForDisplay(command.shortcut)}</CommandShortcut>}
+      {command.shortcut && (
+        <CommandShortcut>
+          <KbdGroup>
+            {formatForDisplay(command.shortcut, { separatorToken: "+" })
+              .split("+")
+              .map((token) => (
+                <Kbd key={token}>{token}</Kbd>
+              ))}
+          </KbdGroup>
+        </CommandShortcut>
+      )}
     </CommandItem>
   );
 });

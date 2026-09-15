@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
@@ -134,6 +135,10 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
   const pickAndSwitchFolder = useStore((s) => s.pickAndSwitchFolder);
   const [pickingFolder, setPickingFolder] = useState(false);
 
+  const activeAutosaveIndex = AUTOSAVE_OPTIONS.findIndex(
+    (option) => option.key === autosaveKey(settings.autosave),
+  );
+
   const handleThemeChange = async (value: ThemePreference) => {
     try {
       await updateSettings({ theme: value });
@@ -231,7 +236,7 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
         <div className="pt-6">
           <p className="text-muted-foreground text-xs font-medium">Autosave</p>
           <RadioGroup
-            className="mt-3 grid grid-cols-6 gap-2"
+            className="bg-muted/50 has-[:focus-visible]:ring-ring/50 relative mt-3 grid grid-cols-6 gap-1 rounded-xl border p-1 has-[:focus-visible]:ring-2"
             aria-label="Autosave"
             value={autosaveKey(settings.autosave)}
             onValueChange={(value) => {
@@ -240,19 +245,25 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
             }}
           >
             {AUTOSAVE_OPTIONS.map((option) => (
-              <FieldLabel
+              <Label
                 key={option.key}
                 htmlFor={`autosave-${option.key}`}
-                className="bg-card has-[button[data-checked]]:border-primary hover:border-foreground/25 has-[button:focus-visible]:border-ring has-[button:focus-visible]:ring-ring/50 flex w-full cursor-pointer flex-col items-center gap-0 overflow-hidden rounded-lg border py-2.5 text-left shadow-none transition-colors has-[button:focus-visible]:ring-1"
+                className="text-foreground relative z-10 flex w-full cursor-pointer items-center justify-center rounded-lg px-2 py-2.5 text-xs font-medium select-none"
               >
-                <span className="flex items-center justify-center text-xs font-medium">
-                  {option.label}
-                </span>
+                <span>{option.label}</span>
                 <span className="sr-only">
                   <RadioGroupItem value={option.key} id={`autosave-${option.key}`} />
                 </span>
-              </FieldLabel>
+              </Label>
             ))}
+            <span
+              aria-hidden
+              className="seg-thumb seg-thumb-6"
+              style={{
+                transform: `translateX(calc(${activeAutosaveIndex * 100}% + ${activeAutosaveIndex * 4}px))`,
+                opacity: activeAutosaveIndex >= 0 ? 1 : 0,
+              }}
+            />
           </RadioGroup>
         </div>
 
@@ -305,13 +316,17 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
           <Field orientation="horizontal" className="mt-3">
             <FieldContent>
               <FieldLabel>Drawings folder</FieldLabel>
-              <FieldDescription className="font-mono text-xs break-all">
-                {drawings?.path ?? "Not set"}
+              <FieldDescription
+                className="font-mono text-xs break-all"
+                title={drawings?.path ?? undefined}
+              >
+                {drawings?.displayPath ?? "Not set"}
               </FieldDescription>
             </FieldContent>
             <Button
-              variant="outline"
+              variant="secondary"
               size="sm"
+              className="bevel"
               disabled={pickingFolder}
               onClick={() => void handleChangeFolder()}
             >

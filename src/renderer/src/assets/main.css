@@ -207,7 +207,7 @@
   --border-strong: oklch(1 0 0 / 14%);
   --border-selected: var(--ring);
   --border-focus: var(--ring);
-  --shadow-float: 0 24px 72px -20px rgb(0 0 0 / 0.7);
+  --shadow-float: none;
   --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6);
 }
 
@@ -258,4 +258,72 @@
   &:hover::-webkit-scrollbar-thumb:hover {
     background: var(--color-border-strong);
   }
+}
+
+@utility bevel {
+  box-shadow:
+    var(--tw-inset-shadow),
+    var(--tw-inset-ring-shadow),
+    var(--tw-ring-offset-shadow),
+    var(--tw-ring-shadow),
+    var(--tw-shadow),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.55),
+    inset 0 0 0 1px rgb(0 0 0 / 0.06),
+    0 1px 2px 0 rgb(0 0 0 / 0.12);
+
+  @variant dark {
+    box-shadow:
+      var(--tw-inset-shadow),
+      var(--tw-inset-ring-shadow),
+      var(--tw-ring-offset-shadow),
+      var(--tw-ring-shadow),
+      var(--tw-shadow),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.09),
+      inset 0 0 0 1px rgb(255 255 255 / 0.06);
+  }
+}
+
+.seg-thumb {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 5px;
+  z-index: 0;
+  width: calc((100% - 2px - 8px - var(--seg-gap-total, 12px)) / var(--seg-cols, 4));
+  border-radius: 8px;
+  background-color: var(--background);
+  will-change: transform;
+  box-shadow:
+    var(--tw-inset-shadow),
+    var(--tw-inset-ring-shadow),
+    var(--tw-ring-offset-shadow),
+    var(--tw-ring-shadow),
+    var(--tw-shadow),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.55),
+    inset 0 0 0 1px rgb(0 0 0 / 0.1),
+    0 1px 2px 0 rgb(0 0 0 / 0.22);
+  transition: transform 220ms ease-out;
+}
+
+.seg-thumb-3 {
+  --seg-cols: 3;
+  --seg-gap-total: 8px;
+}
+
+.seg-thumb-6 {
+  --seg-cols: 6;
+  --seg-gap-total: 20px;
+}
+
+.dark .seg-thumb {
+  background-color: color-mix(in oklch, var(--background), white 12%);
+  box-shadow:
+    var(--tw-inset-shadow),
+    var(--tw-inset-ring-shadow),
+    var(--tw-ring-offset-shadow),
+    var(--tw-ring-shadow),
+    var(--tw-shadow),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.14),
+    inset 0 0 0 1px rgb(255 255 255 / 0.08),
+    0 1px 2px 0 rgb(0 0 0 / 0.45);
 }

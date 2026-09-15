@@ -248,7 +248,13 @@ describe("missing-file recovery", () => {
       if (change === "dispose") session.dispose();
       if (change === "root") {
         useStore.getState().loadSnapshot({
-          info: { path: "/other", displayName: "Other", configured: true, missing: false },
+          info: {
+            path: "/other",
+            displayPath: null,
+            displayName: "Other",
+            configured: true,
+            missing: false,
+          },
           entries: [{ ...entry(900), id: "other.excalidraw", name: "other.excalidraw" }],
           prefs: { lastOpenedFileId: null, recentFileIds: [] },
         });
