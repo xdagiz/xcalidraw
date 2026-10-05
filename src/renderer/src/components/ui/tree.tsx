@@ -7,7 +7,13 @@ import {
 } from "@headless-tree/core";
 import { useTree } from "@headless-tree/react";
 import { ChevronRightIcon, MoreHorizontalIcon } from "lucide-react";
-import type { KeyboardEventHandler, MouseEvent, MouseEventHandler, ReactNode } from "react";
+import type {
+  KeyboardEventHandler,
+  MouseEvent,
+  MouseEventHandler,
+  PointerEventHandler,
+  ReactNode,
+} from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { FileEntry } from "@shared/ipc";
@@ -156,12 +162,14 @@ export const useFileTree = ({
 export const TreeContainer = ({
   tree,
   className,
+  dropRoot,
   onKeyDown,
   onContextMenu,
   children,
 }: {
   tree: FileTreeInstance;
   className?: string;
+  dropRoot?: boolean;
   onKeyDown?: KeyboardEventHandler<HTMLDivElement>;
   onContextMenu?: MouseEventHandler<HTMLDivElement>;
   children: ReactNode;
@@ -171,7 +179,8 @@ export const TreeContainer = ({
   return (
     <div
       {...containerProps}
-      className={className}
+      data-drop-root={dropRoot ? "true" : undefined}
+      className={cn(className, dropRoot && "bg-sidebar-accent/40")}
       onKeyDown={(event) => {
         treeOnKeyDown?.(event);
         onKeyDown?.(event);
@@ -187,18 +196,26 @@ export const TreeRow = ({
   row,
   isActive,
   isDirty,
+  isCut,
+  isDropTarget,
+  isDragging,
   indentPx = 16,
   timeLabel,
   onMenuClick,
   onContextMenu,
+  onPointerDown,
 }: {
   row: FileTreeRow;
   isActive?: boolean;
   isDirty?: boolean;
+  isCut?: boolean;
+  isDropTarget?: boolean;
+  isDragging?: boolean;
   indentPx?: number;
   timeLabel?: string;
   onMenuClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   onContextMenu?: MouseEventHandler<HTMLElement>;
+  onPointerDown?: PointerEventHandler<HTMLDivElement>;
 }) => {
   const { item, level, isFolder, isExpanded: expanded, posInSet, setSize, name: label } = row;
   const isLastSibling = posInSet === setSize - 1;
@@ -219,12 +236,19 @@ export const TreeRow = ({
     );
   }
 
+  const rowClassName =
+    "group/row relative flex h-7 w-full items-center gap-1.5 rounded-md pr-2 transition-colors outline-hidden hover:bg-sidebar-accent/60 focus-within:z-10 has-[:focus-visible]:ring-1.5 has-[:focus-visible]:ring-sidebar-ring data-[active=true]:bg-sidebar-accent data-[cut=true]:opacity-50 data-[dragging=true]:opacity-0 data-[drop-target=true]:bg-sidebar-accent";
+
   if (isFolder) {
     return (
       <div
         data-active={isActive ? "true" : undefined}
+        data-cut={isCut ? "true" : undefined}
+        data-dragging={isDragging ? "true" : undefined}
+        data-drop-target={isDropTarget ? "true" : undefined}
         onContextMenu={onContextMenu}
-        className="group/row relative flex h-7 w-full items-center gap-1.5 rounded-md pr-2 transition-colors outline-hidden hover:bg-sidebar-accent/60 focus-within:z-10 has-[:focus-visible]:ring-1.5 has-[:focus-visible]:ring-sidebar-ring data-[active=true]:bg-sidebar-accent"
+        onPointerDown={onPointerDown}
+        className={rowClassName}
       >
         <button
           {...item.getProps()}
@@ -259,6 +283,7 @@ export const TreeRow = ({
           <button
             type="button"
             aria-label={`Actions for ${label}`}
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
               onMenuClick(event);
@@ -276,8 +301,12 @@ export const TreeRow = ({
     <div
       data-active={isActive ? "true" : undefined}
       data-dirty={isDirty ? "true" : undefined}
+      data-cut={isCut ? "true" : undefined}
+      data-dragging={isDragging ? "true" : undefined}
+      data-drop-target={isDropTarget ? "true" : undefined}
       onContextMenu={onContextMenu}
-      className="group/row relative flex h-7 w-full items-center gap-1.5 rounded-md pr-2 outline-hidden focus-within:z-10 has-[:focus-visible]:ring-1.5 has-[:focus-visible]:ring-sidebar-ring"
+      onPointerDown={onPointerDown}
+      className="group/row relative flex h-7 w-full items-center gap-1.5 rounded-md pr-2 outline-hidden focus-within:z-10 has-[:focus-visible]:ring-1.5 has-[:focus-visible]:ring-sidebar-ring data-[cut=true]:opacity-50 data-[dragging=true]:opacity-0 data-[drop-target=true]:bg-sidebar-accent"
     >
       <span
         aria-hidden
@@ -337,6 +366,7 @@ export const TreeRow = ({
             <button
               type="button"
               aria-label={`Actions for ${label}`}
+              onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
                 onMenuClick(event);

@@ -39,6 +39,8 @@ export interface NativeApi {
     write: (id: string, content: string) => Promise<FileEntry>;
     writeRecover: (id: string, content: string) => Promise<FileEntry>;
     rename: (id: string, newName: string) => Promise<FileEntry>;
+    move: (id: string, parentId: string | null) => Promise<FileEntry>;
+    copy: (id: string, parentId: string | null) => Promise<FileEntry[]>;
     create: (
       parentId: string | null,
       name: string,

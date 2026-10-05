@@ -1,8 +1,16 @@
 import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area";
 import type { FileDeleteMode, FileEntry } from "@shared/ipc";
 import { formatForDisplay, useHotkey } from "@tanstack/react-hotkeys";
-import { PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRightIcon, PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { EmptyDrawings } from "@/components/empty-drawings";
 import {
@@ -44,7 +52,11 @@ import {
   ancestorIdsOf,
   buildEntriesById,
   buildSortedChildIndex,
+  canReparent,
+  dropParentAtOffset,
   findTypeaheadMatch,
+  pasteParentId,
+  remapExpandedIds,
 } from "@/lib/tree";
 import { stripExcalidraw } from "@/lib/utils";
 
@@ -53,6 +65,28 @@ const isTypeaheadChar = (event: React.KeyboardEvent<HTMLDivElement>) =>
 
 const TREE_ROW_HEIGHT = 28;
 const TREE_OVERSCAN = 10;
+const DRAG_START_PX = 4;
+const FOLDER_HOVER_EXPAND_MS = 550;
+
+const stopDragClick = (clickEvent: MouseEvent) => {
+  clickEvent.preventDefault();
+  clickEvent.stopPropagation();
+  window.removeEventListener("click", stopDragClick, true);
+};
+
+type DragPreview = {
+  sourceId: string;
+  label: string;
+  isFolder: boolean;
+  parentId: string | null;
+  x: number;
+  y: number;
+  offsetX: number;
+  offsetY: number;
+  width: number;
+};
+
+type TreeClipboard = { op: "copy" | "cut"; id: string } | null;
 
 export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) => {
   const { toggleSidebar } = useSidebar();
@@ -63,6 +97,8 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   const setOpenFileId = useStore((s) => s.setOpenFileId);
   const openHome = useStore((s) => s.openHome);
   const renameEntry = useStore((s) => s.renameEntry);
+  const moveEntry = useStore((s) => s.moveEntry);
+  const copyEntry = useStore((s) => s.copyEntry);
   const createEntry = useStore((s) => s.createEntry);
   const deleteEntry = useStore((s) => s.deleteEntry);
   const settingsDialogOpen = useStore((s) => s.settingsDialogOpen);
@@ -180,7 +216,17 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   }, []);
 
   const [freshDrawingId, setFreshDrawingId] = useState<string | null>(null);
+  const [clipboard, setClipboard] = useState<TreeClipboard>(null);
+  const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
   const renameValueRef = useRef<string>("");
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const treeItemsRef = useRef(treeItems);
+  const dragPointerY = useRef<number | null>(null);
+  const dragScrollFrame = useRef<number | null>(null);
+  const dragCleanup = useRef<(() => void) | null>(null);
+  const expandTimer = useRef<number | null>(null);
+  const expandHoverId = useRef<string | null>(null);
+  const focusRequest = useRef<string | null>(null);
 
   const clearFreshMarker = useCallback((fileId: string) => {
     setFreshDrawingId((current) => (current === fileId ? null : current));
@@ -205,10 +251,366 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     updateScrollMetrics();
   }, [tree, updateScrollMetrics]);
 
+  const hitAtClientY = useCallback((clientY: number) => {
+    const list = listRef.current;
+    const viewport = contentRef.current;
+    const rows = treeItemsRef.current;
+    if (!list || !viewport) return { parentId: null, row: null };
+
+    const viewportRect = viewport.getBoundingClientRect();
+    if (clientY < viewportRect.top || clientY > viewportRect.bottom) {
+      return {
+        parentId: null,
+        row: null,
+      };
+    }
+
+    const offset = clientY - list.getBoundingClientRect().top;
+    const parentId = dropParentAtOffset(
+      rows.map((row) => ({
+        id: row.id,
+        kind: row.entry.kind,
+        parentId: row.entry.parentId,
+      })),
+      offset,
+      TREE_ROW_HEIGHT,
+    );
+
+    if (offset < 0 || offset >= rows.length * TREE_ROW_HEIGHT) {
+      return { parentId, row: null };
+    }
+
+    const row = rows[Math.floor(offset / TREE_ROW_HEIGHT)];
+    if (!row) return { parentId, row: null };
+
+    return {
+      parentId,
+      row: {
+        id: row.id,
+        isFolder: row.isFolder,
+        isExpanded: row.isExpanded,
+      },
+    };
+  }, []);
+
+  const stopDragScroll = useCallback(() => {
+    dragPointerY.current = null;
+    if (dragScrollFrame.current !== null) {
+      cancelAnimationFrame(dragScrollFrame.current);
+      dragScrollFrame.current = null;
+    }
+  }, []);
+
+  const performMove = useCallback(
+    async (sourceId: string, destParentId: string | null) => {
+      const check = canReparent(sourceId, destParentId, entries);
+      if (!check.ok) {
+        if (check.reason === "into-self") {
+          toast.add({
+            title: "Couldn’t move this item",
+            description: "A folder cannot be moved into itself.",
+            type: "error",
+          });
+        }
+        return null;
+      }
+
+      try {
+        const moved = await moveEntry(sourceId, destParentId);
+        if (!moved) return null;
+        if (moved.id !== sourceId) {
+          setExpandedItems((current) => [...remapExpandedIds(current, sourceId, moved.id)]);
+        }
+        expandIds(ancestorIdsOf(moved.id));
+        focusRequest.current = moved.id;
+        toast.add({ title: `Moved ${stripExcalidraw(moved.name)}`, type: "success" });
+        return moved;
+      } catch (error) {
+        const appError = toAppError(error, "move");
+        toast.add({ title: appError.title, description: appError.message, type: "error" });
+        return null;
+      }
+    },
+    [entries, expandIds, moveEntry, setExpandedItems],
+  );
+
+  const performMoveRef = useRef(performMove);
+
+  useLayoutEffect(() => {
+    treeItemsRef.current = treeItems;
+    performMoveRef.current = performMove;
+  }, [performMove, treeItems]);
+
+  const focusedEntry = useCallback(() => {
+    const focused = tree.getItems().find((item) => item.isFocused());
+    return focused?.getItemData() ?? null;
+  }, [tree]);
+
+  const rememberClipboard = useCallback((op: "copy" | "cut", entry: FileEntry) => {
+    setClipboard({ op, id: entry.id });
+    const verb = op === "copy" ? "Copied" : "Cut";
+    toast.add({ title: `${verb} ${stripExcalidraw(entry.name)}`, type: "success" });
+  }, []);
+
+  const pasteAt = useCallback(
+    async (target: FileEntry | null) => {
+      if (!clipboard) return;
+      const source = entriesById.get(clipboard.id);
+      if (!source) {
+        toast.add({
+          title: clipboard.op === "cut" ? "Couldn’t move this item" : "Couldn’t copy this item",
+          description: "That item is no longer in the drawings folder.",
+          type: "error",
+        });
+        if (clipboard.op === "cut") setClipboard(null);
+        return;
+      }
+
+      const dest = pasteParentId(target);
+      if (clipboard.op === "cut") {
+        const moved = await performMove(source.id, dest);
+        if (moved) setClipboard(null);
+        return;
+      }
+
+      try {
+        const newId = await copyEntry(source.id, dest);
+        if (!newId) return;
+        expandIds(ancestorIdsOf(newId));
+        focusRequest.current = newId;
+        const leaf = newId.split("/").pop() ?? newId;
+        toast.add({ title: `Pasted ${stripExcalidraw(leaf)}`, type: "success" });
+      } catch (error) {
+        const appError = toAppError(error, "copy");
+        toast.add({ title: appError.title, description: appError.message, type: "error" });
+      }
+    },
+    [clipboard, copyEntry, entriesById, expandIds, performMove],
+  );
+
+  const handleRowPointerDown = useCallback(
+    (sourceId: string, event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0 || renamingId !== null) return;
+      const pointerId = event.pointerId;
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const rowEl = event.currentTarget;
+      const rect = rowEl.getBoundingClientRect();
+      const source = treeItemsRef.current.find((row) => row.id === sourceId);
+      const lifted = {
+        sourceId,
+        label: source?.name ?? sourceId,
+        isFolder: source?.isFolder ?? false,
+        offsetX: startX - rect.left,
+        offsetY: startY - rect.top,
+        width: rect.width,
+      };
+
+      let active = false;
+      let cancelled = false;
+      let previousCursor = "";
+
+      const clearExpandTimer = () => {
+        if (expandTimer.current !== null) {
+          window.clearTimeout(expandTimer.current);
+          expandTimer.current = null;
+        }
+        expandHoverId.current = null;
+      };
+
+      const armExpand = (row: { id: string; isFolder: boolean; isExpanded: boolean } | null) => {
+        const insideDrag =
+          row !== null && (row.id === sourceId || row.id.startsWith(`${sourceId}/`));
+        const nextId = row?.isFolder && !row.isExpanded && !insideDrag ? row.id : null;
+        if (nextId === expandHoverId.current) return;
+        if (expandTimer.current !== null) window.clearTimeout(expandTimer.current);
+
+        expandHoverId.current = nextId;
+        expandTimer.current = null;
+        if (!nextId) return;
+
+        expandTimer.current = window.setTimeout(() => {
+          expandIds([nextId]);
+          expandHoverId.current = null;
+          expandTimer.current = null;
+        }, FOLDER_HOVER_EXPAND_MS);
+      };
+
+      const follow = (clientX: number, clientY: number) => {
+        const hit = hitAtClientY(clientY);
+        armExpand(hit.row);
+        setDragPreview((current) => {
+          if (!current) {
+            return {
+              ...lifted,
+              parentId: hit.parentId,
+              x: clientX,
+              y: clientY,
+            };
+          }
+
+          if (current.parentId === hit.parentId && current.x === clientX && current.y === clientY) {
+            return current;
+          }
+
+          return {
+            ...current,
+            parentId: hit.parentId,
+            x: clientX,
+            y: clientY,
+          };
+        });
+      };
+
+      const tick = () => {
+        const y = dragPointerY.current;
+        const viewport = contentRef.current;
+        if (y === null || !viewport || !active || cancelled) {
+          dragScrollFrame.current = null;
+          return;
+        }
+
+        const bounds = viewport.getBoundingClientRect();
+        const edge = 24;
+        const maxStep = 14;
+
+        let delta = 0;
+        if (y < bounds.top + edge) {
+          delta = -Math.ceil(maxStep * Math.min(1, (bounds.top + edge - y) / edge));
+        } else if (y > bounds.bottom - edge) {
+          delta = Math.ceil(maxStep * Math.min(1, (y - (bounds.bottom - edge)) / edge));
+        }
+
+        if (delta !== 0) {
+          viewport.scrollTop += delta;
+          updateScrollMetrics();
+        }
+
+        const hit = hitAtClientY(y);
+        armExpand(hit.row);
+        setDragPreview((current) =>
+          current && current.parentId !== hit.parentId
+            ? { ...current, parentId: hit.parentId }
+            : current,
+        );
+
+        dragScrollFrame.current = requestAnimationFrame(tick);
+      };
+
+      const onMove = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
+
+        if (!active) {
+          const dx = ev.clientX - startX;
+          const dy = ev.clientY - startY;
+          if (dx * dx + dy * dy < DRAG_START_PX * DRAG_START_PX) return;
+
+          active = true;
+          previousCursor = document.body.style.cursor;
+          document.body.style.cursor = "grabbing";
+          window.addEventListener("click", stopDragClick, true);
+          dragScrollFrame.current = requestAnimationFrame(tick);
+        }
+
+        if (cancelled) return;
+        dragPointerY.current = ev.clientY;
+
+        follow(ev.clientX, ev.clientY);
+      };
+
+      const cleanup = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", finish);
+        window.removeEventListener("pointercancel", finish);
+        window.removeEventListener("keydown", onKey);
+        if (active) document.body.style.cursor = previousCursor;
+        clearExpandTimer();
+        if (dragCleanup.current === cleanup) dragCleanup.current = null;
+      };
+
+      const finish = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
+        const wasActive = active;
+        const wasCancelled = cancelled || ev.type === "pointercancel";
+        const dest = hitAtClientY(ev.clientY).parentId;
+        cleanup();
+        active = false;
+        setDragPreview(null);
+        stopDragScroll();
+        if (!wasActive || wasCancelled) return;
+        void performMoveRef.current(sourceId, dest);
+      };
+
+      const onKey = (ev: KeyboardEvent) => {
+        if (ev.key !== "Escape" || !active) return;
+        cancelled = true;
+        document.body.style.cursor = previousCursor;
+        setDragPreview(null);
+        stopDragScroll();
+        clearExpandTimer();
+        ev.preventDefault();
+      };
+
+      dragCleanup.current = cleanup;
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", finish);
+      window.addEventListener("pointercancel", finish);
+      window.addEventListener("keydown", onKey);
+    },
+    [expandIds, hitAtClientY, renamingId, stopDragScroll, updateScrollMetrics],
+  );
+
+  useEffect(() => {
+    const id = focusRequest.current;
+    if (!id || !entriesById.has(id)) return;
+    focusRequest.current = null;
+    tree.getItemInstance(id).setFocused();
+    tree.updateDomFocus();
+    requestAnimationFrame(scrollFocusedRowIntoView);
+  }, [entriesById, scrollFocusedRowIntoView, tree]);
+
+  useEffect(
+    () => () => {
+      dragCleanup.current?.();
+      if (expandTimer.current !== null) window.clearTimeout(expandTimer.current);
+    },
+    [],
+  );
+
   const handleContainerKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
       if (event.target instanceof HTMLInputElement) return;
       requestAnimationFrame(scrollFocusedRowIntoView);
+
+      const mod = (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey;
+      if (mod && !dialogsOpen && renamingId === null) {
+        const key = event.key.toLowerCase();
+        if (key === "v") {
+          event.preventDefault();
+          void pasteAt(focusedEntry());
+          return;
+        }
+
+        if (key === "c" || key === "x") {
+          const current = focusedEntry();
+          if (!current) return;
+          event.preventDefault();
+          rememberClipboard(key === "c" ? "copy" : "cut", current);
+          return;
+        }
+      }
+
+      if (
+        event.key === "Escape" &&
+        clipboard?.op === "cut" &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey
+      ) {
+        event.preventDefault();
+        setClipboard(null);
+        return;
+      }
 
       const items = tree.getItems();
       const focusedIndex = items.findIndex((item) => item.isFocused());
@@ -247,7 +649,18 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
         tree.updateDomFocus();
       }
     },
-    [tree, startRename, openDelete, scrollFocusedRowIntoView],
+    [
+      clipboard,
+      dialogsOpen,
+      focusedEntry,
+      openDelete,
+      pasteAt,
+      rememberClipboard,
+      renamingId,
+      scrollFocusedRowIntoView,
+      startRename,
+      tree,
+    ],
   );
 
   const handleRename = useCallback(
@@ -267,6 +680,10 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
           }
 
           targetId = renamed.id;
+          if (targetId !== fileId) {
+            setExpandedItems((current) => [...remapExpandedIds(current, fileId, targetId)]);
+          }
+
           // Fresh drawings skip the toast; first rename is part of creation.
           if (!isFresh) toast.add({ title: "Drawing renamed", type: "success" });
         }
@@ -282,7 +699,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
         setRenameError(toAppError(error, "rename"));
       }
     },
-    [renameEntry, clearFreshMarker, setOpenFileId, entriesById, freshDrawingId],
+    [renameEntry, clearFreshMarker, setOpenFileId, entriesById, freshDrawingId, setExpandedItems],
   );
 
   const handleCreate = useCallback(
@@ -342,6 +759,15 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
         case "new-folder":
           await handleCreate(entry.id, "directory");
           break;
+        case "copy":
+          rememberClipboard("copy", entry);
+          break;
+        case "cut":
+          rememberClipboard("cut", entry);
+          break;
+        case "paste":
+          await pasteAt(entry);
+          break;
         case "rename":
           startRename(entry.id);
           break;
@@ -352,7 +778,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
         }
       }
     },
-    [handleCreate, startRename, openDelete],
+    [handleCreate, openDelete, pasteAt, rememberClipboard, startRename],
   );
 
   const openMenuFor = useCallback(
@@ -360,23 +786,27 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
       const entry = entriesById.get(fileId);
       if (!entry) return;
 
+      const editItems = [
+        { id: "copy", label: "Copy" },
+        { id: "cut", label: "Cut" },
+        ...(clipboard ? [{ id: "paste", label: "Paste" }] : []),
+        { id: "rename", label: "Rename" },
+        { id: "delete", label: "Delete" },
+      ];
+
       const items =
         entry.kind === "directory"
           ? [
               { id: "new-drawing", label: "New drawing" },
               { id: "new-folder", label: "New folder" },
-              { id: "rename", label: "Rename" },
-              { id: "delete", label: "Delete" },
+              ...editItems,
             ]
-          : [
-              { id: "rename", label: "Rename" },
-              { id: "delete", label: "Delete" },
-            ];
+          : editItems;
 
       const action = await window.api.contextMenu.show(items, x, y);
       await menuAction(action, entry);
     },
-    [entriesById, menuAction],
+    [clipboard, entriesById, menuAction],
   );
 
   const handleContextMenu = useCallback(
@@ -425,9 +855,30 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
       ? firstVisibleRow + visibleRowCount
       : Math.max(firstVisibleRow + visibleRowCount, focusedTreeRow + 1);
   const visibleTreeItems = treeItems.slice(virtualStart, virtualEnd);
+  const dropFolderId = dragPreview?.parentId ?? null;
+
+  if (clipboard?.op === "cut" && !entriesById.has(clipboard.id)) setClipboard(null);
 
   return (
     <>
+      {dragPreview ? (
+        <div
+          className="bg-sidebar text-sidebar-foreground ring-sidebar-ring pointer-events-none fixed z-50 flex h-7 items-center gap-1.5 rounded-md px-2 text-sm shadow-lg"
+          style={{
+            width: dragPreview.width,
+            left: dragPreview.x - dragPreview.offsetX,
+            top: dragPreview.y - dragPreview.offsetY,
+          }}
+        >
+          {dragPreview.isFolder ? (
+            <ChevronRightIcon className="text-muted-foreground size-3.5 shrink-0" />
+          ) : (
+            <span className="size-4 shrink-0" />
+          )}
+          <span className="truncate">{stripExcalidraw(dragPreview.label)}</span>
+        </div>
+      ) : null}
+
       <Sidebar side="left" variant="floating">
         <SidebarHeader className="pb-0">
           <SidebarGroupLabel className="flex items-center justify-between">
@@ -466,6 +917,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
             </div>
           </SidebarGroupLabel>
         </SidebarHeader>
+
         <ScrollAreaPrimitive.Root
           data-slot="sidebar-scroll"
           className="relative flex min-h-0 flex-1 flex-col"
@@ -501,12 +953,14 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
                 ) : (
                   <TreeContainer
                     tree={tree}
+                    dropRoot={dragPreview !== null && dropFolderId === null}
                     onKeyDown={handleContainerKeyDown}
                     onContextMenu={(e) => {
                       if (e.target === e.currentTarget) void openRootMenu(e.clientX, e.clientY);
                     }}
                   >
                     <div
+                      ref={listRef}
                       style={{ height: treeItems.length * TREE_ROW_HEIGHT, position: "relative" }}
                     >
                       <div
@@ -550,6 +1004,14 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
                                   row={row}
                                   isActive={entry.id === openFileId}
                                   isDirty={dirtyById[entry.id] !== undefined}
+                                  isCut={clipboard?.op === "cut" && clipboard.id === entry.id}
+                                  isDragging={dragPreview?.sourceId === entry.id}
+                                  isDropTarget={
+                                    dropFolderId !== null &&
+                                    (entry.id === dropFolderId ||
+                                      entry.id.startsWith(`${dropFolderId}/`))
+                                  }
+                                  onPointerDown={(event) => handleRowPointerDown(entry.id, event)}
                                   timeLabel={
                                     entry.kind === "file"
                                       ? formatRelativeTimeShort(entry.modifiedAt)

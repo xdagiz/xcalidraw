@@ -65,6 +65,20 @@ const messageFor = (operation: ErrorOperation): Pick<AppError, "title" | "messag
     };
   }
 
+  if (operation === "move") {
+    return {
+      title: "Couldn’t move this item",
+      message: "Check that the drawings folder is available and try again.",
+    };
+  }
+
+  if (operation === "copy") {
+    return {
+      title: "Couldn’t copy this item",
+      message: "Check that the drawings folder is available and try again.",
+    };
+  }
+
   if (operation === "settings") {
     return { title: "Couldn’t update settings", message: "Your change was not saved. Try again." };
   }
@@ -112,6 +126,7 @@ export const detailFor = (details: ErrorDetails): string => {
       return "This item cannot be used because it links outside the drawings folder.";
     if (details.reason === "hardlink")
       return "This item cannot be used because linked files are not allowed in the drawings folder.";
+    if (details.reason === "into-self") return "A folder cannot be moved into itself.";
     if (details.reason === "invalid-json" || details.reason === "invalid-record")
       return "This file is not a valid drawing and cannot be opened.";
     if (details.reason === "is-directory")

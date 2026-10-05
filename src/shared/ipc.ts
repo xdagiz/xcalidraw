@@ -2,6 +2,7 @@ import { codedError } from "./errors";
 import type { RendererSafeError } from "./errors";
 
 export const FILE_NOT_FOUND_MESSAGE = "File not found";
+const COPY_EXT = ".excalidraw";
 
 export type RendererStoreKey = "lastOpenedFileId" | "libraryItems" | "recentFiles";
 
@@ -24,6 +25,16 @@ export type ChannelMap = {
     operation: "recover";
   };
   "files:rename": { args: [id: string, newName: string]; result: FileEntry; operation: "rename" };
+  "files:move": {
+    args: [id: string, parentId: string | null];
+    result: FileEntry;
+    operation: "move";
+  };
+  "files:copy": {
+    args: [id: string, parentId: string | null];
+    result: FileEntry[];
+    operation: "copy";
+  };
   "files:create": {
     args: [parentId: string | null, name: string, kind: "file" | "directory"];
     result: FileEntry;
@@ -112,6 +123,32 @@ export const hasStableFileIdentity = (entry: Pick<FileEntry, "ino" | "dev">) =>
 export const parentIdOf = (id: string) => {
   const idx = id.lastIndexOf("/");
   return idx === -1 ? null : id.slice(0, idx);
+};
+
+export const nextCopyName = (
+  siblings: readonly { name: string }[],
+  name: string,
+  kind: "file" | "directory",
+) => {
+  const taken = new Set(siblings.map((sibling) => sibling.name));
+  const lower = name.toLowerCase();
+  const hasExt = kind === "file" && lower.endsWith(COPY_EXT);
+  const ext = hasExt ? name.slice(name.length - COPY_EXT.length) : "";
+  const stem = hasExt ? name.slice(0, name.length - ext.length) : name;
+
+  const build = (index: number) => {
+    const label = index === 1 ? `${stem} copy` : `${stem} copy ${index}`;
+    return `${label}${ext}`;
+  };
+
+  let index = 1;
+  let candidate = build(index);
+  while (taken.has(candidate)) {
+    index += 1;
+    candidate = build(index);
+  }
+
+  return candidate;
 };
 
 const entryCollator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });

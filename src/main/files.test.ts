@@ -1,4 +1,14 @@
-import { link, mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  link,
+  lstat,
+  mkdtemp,
+  mkdir,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -21,9 +31,11 @@ vi.mock("./drawings", () => ({
 }));
 
 import {
+  copyEntry,
   createEntry,
   deleteEntry,
   listEntries,
+  moveEntry,
   readDrawingFile,
   renameEntry,
   writeDrawingFile,
@@ -176,6 +188,101 @@ describe("files", () => {
     expect(entries.map((e) => e.id)).toContain("mixedcase");
     await expect(readDrawingFile("CaseFile.excalidraw")).resolves.toBe(SCENE);
     await expect(readDrawingFile("casefile.excalidraw")).resolves.toBe(SCENE);
+  });
+
+  it("moves a file into another folder and to the root", async () => {
+    await mkdir(path.join(ctx.root, "folder"));
+    await mkdir(path.join(ctx.root, "dest"));
+    await writeFile(path.join(ctx.root, "folder", "a.excalidraw"), SCENE);
+
+    const moved = await moveEntry("folder/a.excalidraw", "dest");
+    expect(moved.id).toBe("dest/a.excalidraw");
+    await expect(readDrawingFile("dest/a.excalidraw")).resolves.toBe(SCENE);
+    await expect(readDrawingFile("folder/a.excalidraw")).rejects.toThrow();
+
+    const rooted = await moveEntry("dest/a.excalidraw", null);
+    expect(rooted.id).toBe("a.excalidraw");
+    await expect(readDrawingFile("a.excalidraw")).resolves.toBe(SCENE);
+  });
+
+  it("moves a directory and keeps the nested drawing", async () => {
+    await mkdir(path.join(ctx.root, "src", "nested"), { recursive: true });
+    await mkdir(path.join(ctx.root, "dest"));
+    await writeFile(path.join(ctx.root, "src", "nested", "a.excalidraw"), SCENE);
+
+    const moved = await moveEntry("src", "dest");
+
+    expect(moved.id).toBe("dest/src");
+    expect(moved.kind).toBe("directory");
+    await expect(readDrawingFile("dest/src/nested/a.excalidraw")).resolves.toBe(SCENE);
+  });
+
+  it("rejects a move into the source, into a child, or onto a taken name", async () => {
+    await mkdir(path.join(ctx.root, "src", "nested"), { recursive: true });
+    await mkdir(path.join(ctx.root, "dest"));
+    await writeFile(path.join(ctx.root, "src", "a.excalidraw"), SCENE);
+    await writeFile(path.join(ctx.root, "dest", "a.excalidraw"), SCENE);
+
+    await expect(moveEntry("src", "src")).rejects.toThrow("Cannot move a folder into itself");
+    await expect(moveEntry("src", "src/nested")).rejects.toThrow(
+      "Cannot move a folder into itself",
+    );
+    await expect(moveEntry("src/a.excalidraw", "dest")).rejects.toThrow(
+      "A file or folder with that name already exists",
+    );
+    await expect(readDrawingFile("src/a.excalidraw")).resolves.toBe(SCENE);
+  });
+
+  it("does not write when a move stays in the same parent", async () => {
+    await mkdir(path.join(ctx.root, "folder"));
+    const filePath = path.join(ctx.root, "folder", "a.excalidraw");
+    await writeFile(filePath, SCENE);
+    const before = await lstat(filePath);
+
+    const same = await moveEntry("folder/a.excalidraw", "folder");
+
+    expect(same.id).toBe("folder/a.excalidraw");
+    const after = await lstat(filePath);
+    expect(after.mtimeMs).toBe(before.mtimeMs);
+  });
+
+  it("copies a file onto a taken name and copies a directory tree", async () => {
+    await writeFile(path.join(ctx.root, "Note.excalidraw"), SCENE);
+    await writeFile(path.join(ctx.root, "Note copy.excalidraw"), SCENE);
+    await mkdir(path.join(ctx.root, "notes", "sub"), { recursive: true });
+    await writeFile(path.join(ctx.root, "notes", "sub", "b.excalidraw"), SCENE);
+
+    const copied = await copyEntry("Note.excalidraw", null);
+    expect(copied.map((entry) => entry.id)).toEqual(["Note copy 2.excalidraw"]);
+    await expect(readDrawingFile("Note copy 2.excalidraw")).resolves.toBe(SCENE);
+
+    const tree = await copyEntry("notes", null);
+    expect(tree[0]?.id).toBe("notes copy");
+    expect(tree.map((entry) => entry.id).toSorted()).toEqual([
+      "notes copy",
+      "notes copy/sub",
+      "notes copy/sub/b.excalidraw",
+    ]);
+    await expect(readDrawingFile("notes copy/sub/b.excalidraw")).resolves.toBe(SCENE);
+    await expect(readDrawingFile("notes/sub/b.excalidraw")).resolves.toBe(SCENE);
+  });
+
+  it("removes the new folder when a copy fails midway", async () => {
+    await mkdir(path.join(ctx.root, "src"));
+    await writeFile(path.join(ctx.root, "src", "a.excalidraw"), SCENE);
+    let calls = 0;
+
+    await expect(
+      copyEntry("src", null, {
+        beforeMutate: () => {
+          calls += 1;
+          if (calls === 2) throw new Error("boom");
+        },
+      }),
+    ).rejects.toThrow("boom");
+
+    const entries = await listEntries();
+    expect(entries.map((entry) => entry.id)).toEqual(["src", "src/a.excalidraw"]);
   });
 
   it("trashes files and folders through the injected trash target", async () => {

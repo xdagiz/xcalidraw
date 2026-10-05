@@ -1,6 +1,10 @@
 import type { FileEntry } from "@shared/ipc";
 import { parentIdOf } from "@shared/ipc";
 
+import { isInsideSubtree, remapId } from "./entry-tree";
+
+export { nextCopyName } from "@shared/ipc";
+
 export const EXPANDED_FOLDERS_STORAGE_KEY = "xcalidraw.expandedFolderIds";
 
 const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
@@ -114,6 +118,54 @@ export const readExpandedFolderIds = (storage: StorageReader): Set<string> => {
 };
 
 export const MAX_EXPANDED_FOLDERS = 500;
+
+export const pasteParentId = (focused: FileEntry | null) => {
+  if (!focused) return null;
+  return focused.kind === "directory" ? focused.id : focused.parentId;
+};
+
+export const canReparent = (
+  sourceId: string,
+  destParentId: string | null,
+  entries: readonly FileEntry[],
+): { ok: true } | { ok: false; reason: "into-self" | "same-parent" } => {
+  if (destParentId !== null && isInsideSubtree(sourceId, destParentId)) {
+    return { ok: false, reason: "into-self" };
+  }
+
+  const source = entries.find((entry) => entry.id === sourceId);
+  const currentParent = source ? source.parentId : parentIdOf(sourceId);
+  if (currentParent === destParentId) return { ok: false, reason: "same-parent" };
+  return { ok: true };
+};
+
+export const remapExpandedIds = (
+  ids: Iterable<string>,
+  oldRoot: string,
+  newRoot: string,
+): Set<string> => {
+  const next = new Set<string>();
+  for (const id of ids) next.add(remapId(id, oldRoot, newRoot));
+  return next;
+};
+
+export type DropRow = {
+  id: string;
+  kind: "file" | "directory";
+  parentId: string | null;
+};
+
+export const dropParentAtOffset = (
+  rows: readonly DropRow[],
+  offsetPx: number,
+  rowHeight: number,
+) => {
+  if (rowHeight <= 0 || rows.length === 0) return null;
+  if (offsetPx < 0 || offsetPx >= rows.length * rowHeight) return null;
+  const row = rows[Math.floor(offsetPx / rowHeight)];
+  if (!row) return null;
+  return row.kind === "directory" ? row.id : row.parentId;
+};
 
 export const writeExpandedFolderIds = (storage: StorageWriter, ids: Iterable<string>) => {
   try {
