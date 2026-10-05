@@ -11,9 +11,11 @@ import {
   DRAWINGS_GET,
   DRAWINGS_LOAD,
   DRAWINGS_PICK,
+  FILES_COPY,
   FILES_CREATE,
   FILES_DELETE,
   FILES_LIST,
+  FILES_MOVE,
   FILES_READ,
   FILES_RENAME,
   FILES_WRITE,
@@ -307,6 +309,8 @@ type Deps = {
   writeDrawingFile: (id: string, content: string) => Promise<FileEntry>;
   writeDrawingFileRecover: (id: string, content: string) => Promise<FileEntry>;
   renameEntry: (id: string, newName: string) => Promise<FileEntry>;
+  moveEntry: (id: string, parentId: string | null) => Promise<FileEntry>;
+  copyEntry: (id: string, parentId: string | null) => Promise<FileEntry[]>;
   createEntry: (
     parentId: string | null,
     name: string,
@@ -539,6 +543,16 @@ export const registerIpcHandlers = (deps: Deps) => {
 
   handle(FILES_RENAME, "rename", (_event, id, newName) => {
     return deps.renameEntry(schemaString(id, "id"), schemaString(newName, "newName"));
+  });
+
+  handle(FILES_MOVE, "move", (_event, id, parentRaw) => {
+    const parentId = parentRaw === null ? null : schemaString(parentRaw, "parentId");
+    return deps.moveEntry(schemaString(id, "id"), parentId);
+  });
+
+  handle(FILES_COPY, "copy", (_event, id, parentRaw) => {
+    const parentId = parentRaw === null ? null : schemaString(parentRaw, "parentId");
+    return deps.copyEntry(schemaString(id, "id"), parentId);
   });
 
   handle(FILES_CREATE, "create", (_event, parentRaw, name, kindRaw) => {

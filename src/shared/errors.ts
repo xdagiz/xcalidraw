@@ -7,6 +7,8 @@ export type ErrorOperation =
   | "rename"
   | "create"
   | "delete"
+  | "move"
+  | "copy"
   | "settings"
   | "unexpected";
 
@@ -41,6 +43,7 @@ export type ErrorDetails =
         | "invalid-json"
         | "invalid-record"
         | "invalid-arg"
+        | "into-self"
         | "is-directory"
         | "directory-not-empty"
         | "invalid-payload";
@@ -102,6 +105,8 @@ const ERROR_OPERATIONS: ReadonlySet<string> = new Set([
   "rename",
   "create",
   "delete",
+  "move",
+  "copy",
   "settings",
   "unexpected",
 ]);
@@ -117,6 +122,7 @@ const INVALID_REASONS: ReadonlySet<string> = new Set([
   "invalid-json",
   "invalid-record",
   "invalid-arg",
+  "into-self",
   "is-directory",
   "directory-not-empty",
   "invalid-payload",
@@ -306,11 +312,13 @@ export const toSerialized = (error: unknown, operation: ErrorOperation): Seriali
       cause: error.cause,
     };
   }
+
   const message = cleanErrorMessage(error);
   const stack = getStack(error);
   const details = getDetails(error);
   const causeRaw = getCause(error);
   let name = "Error";
+
   if (isRecord(error) && typeof error.name === "string" && error.name.length > 0) name = error.name;
   let cause: SerializedAppError | undefined;
   if (causeRaw instanceof Error || isSerializedAppError(causeRaw) || typeof causeRaw === "string") {
@@ -320,6 +328,7 @@ export const toSerialized = (error: unknown, operation: ErrorOperation): Seriali
       cause = { ...causeRaw, operation, retryable: isRetryableDetails(causeRaw.details) };
     }
   }
+
   return {
     $isAppError: true,
     name,

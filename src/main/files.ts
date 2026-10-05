@@ -18,6 +18,7 @@ import { codedError, errorCodeOf } from "@shared/errors";
 import {
   FILE_NOT_FOUND_MESSAGE,
   MAX_DRAWING_CONTENT_BYTES,
+  nextCopyName,
   parentIdOf,
   validateDrawingRecord,
   type FileDeleteMode,
@@ -803,6 +804,274 @@ export const renameEntry = async (
     }
 
     return entryFromAbs(root, nextAbs, kind);
+  });
+
+const throwIntoSelf = () => {
+  throw codedError("Cannot move a folder into itself", {
+    code: "INVALID",
+    reason: "into-self",
+  });
+};
+
+const idContains = (rootId: string, id: string) => id === rootId || id.startsWith(`${rootId}/`);
+
+const resolveParentAbs = async (parentId: string | null, root: string, rootReal: string) => {
+  if (parentId === null) return root;
+
+  const normalizedParent = normalizeId(parentId);
+  assertSafeIdString(normalizedParent);
+  const parentAbs = path.resolve(root, ...normalizedParent.split("/").filter(Boolean));
+  if (!contains(path.resolve(root), parentAbs)) {
+    throw codedError("Path escapes drawings root", { code: "INVALID", reason: "outside-root" });
+  }
+
+  await assertInsideRealRoot(rootReal, parentAbs);
+  await assertParentsNotSymlinks(root, rootReal, parentAbs);
+  const parentStats = await lstat(parentAbs).catch(() => null);
+  if (!parentStats || !parentStats.isDirectory() || parentStats.isSymbolicLink()) {
+    throw codedError("Parent folder not found", { code: "NOT_FOUND", reason: "missing-parent" });
+  }
+
+  return parentAbs;
+};
+
+const fsyncFile = async (absPath: string) => {
+  const fh = await fsOpen(absPath, "r").catch(() => null);
+  if (!fh) return;
+  await fh.sync().catch(() => {});
+  await fh.close().catch(() => {});
+};
+
+type PlannedCopy = { abs: string; rel: string; kind: "file" | "directory" };
+
+const assertRealInside = async (rootReal: string, absPath: string) => {
+  const real = await realpath(absPath).catch(() => null);
+  if (!real || !contains(rootReal, real)) {
+    throw codedError("Path escapes drawings root", { code: "INVALID", reason: "outside-root" });
+  }
+};
+
+const planCopyNodes = async (
+  rootReal: string,
+  sourceAbs: string,
+  isDirectory: boolean,
+): Promise<PlannedCopy[]> => {
+  if (!isDirectory) return [{ abs: sourceAbs, rel: "", kind: "file" }];
+
+  const nodes: PlannedCopy[] = [{ abs: sourceAbs, rel: "", kind: "directory" }];
+  const pending = [nodes[0]];
+  while (pending.length > 0) {
+    const current = pending.shift();
+    if (!current) continue;
+
+    let dirents: Dirent[];
+    try {
+      dirents = await readdir(current.abs, { withFileTypes: true });
+    } catch (error) {
+      if (errorCodeOf(error) === "ENOENT") continue;
+      throw error;
+    }
+
+    for (const dirent of dirents) {
+      if (dirent.name.startsWith(".")) continue;
+      const abs = path.join(current.abs, dirent.name);
+      const lst = await lstat(abs).catch((error: unknown) => {
+        if (errorCodeOf(error) === "ENOENT") return null;
+        throw error;
+      });
+      if (!lst || lst.isSymbolicLink()) continue;
+
+      const rel = current.rel ? `${current.rel}/${dirent.name}` : dirent.name;
+      if (lst.isDirectory()) {
+        await assertRealInside(rootReal, abs);
+        const node: PlannedCopy = { abs, rel, kind: "directory" };
+        nodes.push(node);
+        pending.push(node);
+        continue;
+      }
+
+      if (lst.isFile() && isExcalidrawFileName(dirent.name)) {
+        if (lst.nlink > 1) {
+          throw codedError("Hardlinks not allowed", { code: "INVALID", reason: "hardlink" });
+        }
+        await assertRealInside(rootReal, abs);
+        nodes.push({ abs, rel, kind: "file" });
+      }
+    }
+  }
+
+  return nodes;
+};
+
+const reserveCopyLeaf = async (
+  parentAbs: string,
+  sourceName: string,
+  kind: "file" | "directory",
+) => {
+  const listed = await readdir(parentAbs).catch(() => [] as string[]);
+  const taken = new Set(listed.map((listedName) => normalizeFsName(listedName)));
+
+  for (let guard = 0; guard < 1000; guard += 1) {
+    const candidate = nextCopyName(
+      [...taken].map((listedName) => ({ name: listedName })),
+      sourceName,
+      kind,
+    );
+    const destAbs = path.join(parentAbs, candidate);
+    const exists = await lstat(destAbs).catch(() => null);
+    if (!exists) return candidate;
+    taken.add(normalizeFsName(candidate));
+  }
+
+  throw codedError("A file or folder with that name already exists", {
+    code: "INVALID",
+    reason: "exists",
+  });
+};
+
+export const moveEntry = async (
+  id: string,
+  parentId: string | null,
+  hooks?: FsMutationHooks,
+): Promise<FileEntry> =>
+  withFileMutationLock(async () => {
+    const { root, rootReal, absPath, candidateReal } = await resolveInsideRoot(id);
+    const lst = await lstat(absPath);
+    if (lst.isSymbolicLink()) {
+      throw codedError("Symlinks not allowed", { code: "INVALID", reason: "symlink" });
+    }
+
+    if (lst.isFile() && lst.nlink > 1) {
+      throw codedError("Hardlinks not allowed", { code: "INVALID", reason: "hardlink" });
+    }
+
+    const isDirectory = lst.isDirectory();
+    if (!isDirectory && !isExcalidrawFileName(path.basename(id))) {
+      throw codedError("Only .excalidraw files can be moved", {
+        code: "INVALID",
+        reason: "bad-extension",
+        field: "id",
+      });
+    }
+
+    if (parentId !== null && idContains(id, normalizeId(parentId))) throwIntoSelf();
+
+    const parentAbs = await resolveParentAbs(parentId, root, rootReal);
+    const parentReal = parentId === null ? rootReal : await realpath(parentAbs);
+    if (contains(candidateReal, parentReal)) throwIntoSelf();
+
+    const kind = isDirectory ? "directory" : "file";
+    if (path.resolve(parentAbs) === path.resolve(path.dirname(absPath))) {
+      return entryFromAbs(root, absPath, kind);
+    }
+
+    const nextAbs = path.join(parentAbs, path.basename(absPath));
+    if (!contains(path.resolve(root), nextAbs)) {
+      throw codedError("Path escapes drawings root", { code: "INVALID", reason: "outside-root" });
+    }
+
+    const nextReal = await assertInsideRealRoot(rootReal, nextAbs);
+    await assertParentsNotSymlinks(root, rootReal, nextAbs);
+    const exists = await lstat(nextAbs).catch(() => null);
+    if (exists) throwExists();
+
+    hooks?.beforeMutate?.([candidateReal, nextReal]);
+    try {
+      await rename(candidateReal, nextReal);
+    } catch (error) {
+      const code = errorCodeOf(error);
+      if (code === "EEXIST" || code === "ENOTEMPTY") throwExists(error);
+      if (isDirectory || code !== "EXDEV") throw error;
+
+      try {
+        await copyFile(candidateReal, nextReal, fsConstants.COPYFILE_EXCL);
+      } catch (copyError) {
+        if (errorCodeOf(copyError) === "EEXIST") throwExists(copyError);
+        throw copyError;
+      }
+
+      await fsyncFile(nextReal);
+      try {
+        await unlink(candidateReal);
+      } catch (unlinkError) {
+        await unlink(nextReal).catch(() => {});
+        throw unlinkError;
+      }
+    }
+
+    return entryFromAbs(root, nextAbs, kind);
+  });
+
+export const copyEntry = async (
+  id: string,
+  parentId: string | null,
+  hooks?: FsMutationHooks,
+): Promise<FileEntry[]> =>
+  withFileMutationLock(async () => {
+    const { root, rootReal, absPath } = await resolveInsideRoot(id);
+    const lst = await lstat(absPath);
+    if (lst.isSymbolicLink()) {
+      throw codedError("Symlinks not allowed", { code: "INVALID", reason: "symlink" });
+    }
+
+    if (lst.isFile() && lst.nlink > 1) {
+      throw codedError("Hardlinks not allowed", { code: "INVALID", reason: "hardlink" });
+    }
+
+    const isDirectory = lst.isDirectory();
+    if (!isDirectory && !isExcalidrawFileName(path.basename(id))) {
+      throw codedError("Only .excalidraw files can be copied", {
+        code: "INVALID",
+        reason: "bad-extension",
+        field: "id",
+      });
+    }
+
+    const parentAbs = await resolveParentAbs(parentId, root, rootReal);
+    const nodes = await planCopyNodes(rootReal, absPath, isDirectory);
+    const leaf = await reserveCopyLeaf(
+      parentAbs,
+      path.basename(absPath),
+      isDirectory ? "directory" : "file",
+    );
+
+    const created: FileEntry[] = [];
+    let started = false;
+    let createdRoot: string | null = null;
+
+    try {
+      for (const node of nodes) {
+        const destAbs = node.rel
+          ? path.join(parentAbs, leaf, ...node.rel.split("/"))
+          : path.join(parentAbs, leaf);
+        if (!contains(path.resolve(root), destAbs)) {
+          throw codedError("Path escapes drawings root", {
+            code: "INVALID",
+            reason: "outside-root",
+          });
+        }
+
+        const destReal = await assertInsideRealRoot(rootReal, destAbs);
+        await assertParentsNotSymlinks(root, rootReal, destAbs);
+
+        if (createdRoot === null) createdRoot = destReal;
+        hooks?.beforeMutate?.([destReal]);
+        if (node.kind === "directory") {
+          await mkdir(destReal);
+        } else {
+          await copyFile(node.abs, destReal, fsConstants.COPYFILE_EXCL);
+          await fsyncFile(destReal);
+        }
+
+        started = true;
+        created.push(await entryFromAbs(root, destAbs, node.kind));
+      }
+    } catch (error) {
+      if (started && createdRoot) await rm(createdRoot, { recursive: true, force: true });
+      throw error;
+    }
+
+    return created;
   });
 
 export const createEntry = async (
