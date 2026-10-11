@@ -66,6 +66,16 @@ export const validateSettingsUpdate = (payload: Record<string, unknown>): Settin
         }
         update[key] = value;
         break;
+      case "autoDownloadUpdates":
+        if (typeof value !== "boolean") {
+          throw codedError(`${key} must be a boolean`, {
+            code: "INVALID",
+            reason: "invalid-payload",
+            field: key,
+          });
+        }
+        update[key] = value;
+        break;
       default:
         throw codedError(`Unknown setting: ${key}`, {
           code: "INVALID",
@@ -82,6 +92,7 @@ export const getSettings = (): AppSettings => ({
   autosave: normalizeAutosaveSetting(store.get("autosave")),
   reopenLastDrawing: store.get("reopenLastDrawing") ?? DEFAULT_SETTINGS.reopenLastDrawing,
   showRecents: store.get("showRecents") ?? DEFAULT_SETTINGS.showRecents,
+  autoDownloadUpdates: store.get("autoDownloadUpdates") ?? DEFAULT_SETTINGS.autoDownloadUpdates,
 });
 
 export const windowBgColor = () => (nativeTheme.shouldUseDarkColors ? "#181818" : "#ffffff");
@@ -124,6 +135,11 @@ export const setSettings = (update: SettingsUpdate): AppSettings => {
   if (clean.showRecents !== undefined) {
     next.showRecents = clean.showRecents;
     store.set("showRecents", clean.showRecents);
+  }
+
+  if (clean.autoDownloadUpdates !== undefined) {
+    next.autoDownloadUpdates = clean.autoDownloadUpdates;
+    store.set("autoDownloadUpdates", clean.autoDownloadUpdates);
   }
 
   if (themeChanged) applyTheme();

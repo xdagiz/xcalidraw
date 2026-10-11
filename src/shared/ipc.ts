@@ -62,6 +62,10 @@ export type ChannelMap = {
     operation: "unexpected";
   };
   "app:quit": { args: []; result: void; operation: "unexpected" };
+  "updates:check": { args: []; result: UpdateStatus; operation: "unexpected" };
+  "updates:download": { args: []; result: UpdateStatus; operation: "unexpected" };
+  "updates:install": { args: []; result: void; operation: "unexpected" };
+  "updates:status:get": { args: []; result: UpdateStatus; operation: "unexpected" };
   "window:close": { args: [requestId: number]; result: void; operation: "unexpected" };
   "window:report-fatal": {
     args: [payload: RendererSafeError];
@@ -135,10 +139,13 @@ export type StoreType = {
   lastOpenedFileId?: string | null;
   libraryItems?: string | null;
   recentFiles?: string | null;
+  stagedUpdateVersion?: string | null;
+  declinedUpdateVersion?: string | null;
   theme?: ThemePreference;
   autosave?: unknown;
   reopenLastDrawing?: boolean;
   showRecents?: boolean;
+  autoDownloadUpdates?: boolean;
 };
 
 export type FilesChangedEvent = {
@@ -151,6 +158,14 @@ export type FilesChangedEvent = {
 export type WatcherErrorEvent = {
   message: string;
 };
+
+export type UpdateStatus =
+  | { state: "idle" }
+  | { state: "available"; version: string }
+  | { state: "downloading"; version: string; percent: number }
+  | { state: "downloaded"; version: string }
+  | { state: "installing"; version: string }
+  | { state: "error"; version: string; message: string };
 
 export const AUTOSAVE_PRESETS_MS = [1_000, 5_000, 15_000, 30_000] as const;
 export const AUTOSAVE_ALWAYS_SETTLE_MS = 300;
@@ -212,6 +227,7 @@ export type AppSettings = {
   autosave: AutosaveSetting;
   reopenLastDrawing: boolean;
   showRecents: boolean;
+  autoDownloadUpdates: boolean;
 };
 
 export type SettingsUpdate = Partial<AppSettings>;
@@ -221,6 +237,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autosave: DEFAULT_AUTOSAVE,
   reopenLastDrawing: true,
   showRecents: true,
+  autoDownloadUpdates: false,
 };
 
 export type ThumbnailRecord = {

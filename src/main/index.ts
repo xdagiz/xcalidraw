@@ -41,6 +41,15 @@ import { initLogger, log } from "./logger";
 import { applyTheme, getSettings, setSettings, applyWindowBgColor } from "./settings";
 import { getLastOpenedFileId, getRecentFileIds } from "./store";
 import { pruneThumbnailCache, readThumbnailRecords, writeThumbnailRecord } from "./thumbnails";
+import {
+  applyUpdatePreferences,
+  downloadUpdate,
+  getUpdateStatus,
+  installUpdate,
+  runUpdateCheck,
+  setupAutoUpdater,
+  stopAutoUpdater,
+} from "./updater";
 import { createDrawingsWatcher, type DrawingsWatcher } from "./watcher";
 import {
   LIBRARY_PARTITION,
@@ -293,6 +302,7 @@ const fastShutdownQuit = async () => {
     !isWindowReady(win)
   ) {
     void watcher?.stop();
+    stopAutoUpdater();
     app.quit();
     return;
   }
@@ -416,6 +426,7 @@ void app.whenReady().then(async () => {
   installPermissionHandlers();
   installShutdownHandler();
   installAppProtocolHandler();
+  await setupAutoUpdater();
 
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
@@ -487,9 +498,21 @@ void app.whenReady().then(async () => {
     onFlushStarted,
     showUnsavedChangesDialog,
     getSettings,
-    updateSettings: setSettings,
+    updateSettings: (update) => {
+      const settings = setSettings(update);
+      applyUpdatePreferences();
+      return settings;
+    },
     getThumbnails: readThumbnailRecords,
     saveThumbnail: writeThumbnailRecord,
+    getUpdateStatus,
+    checkForUpdates: () =>
+      runUpdateCheck({
+        alertOnFail: true,
+        trigger: "manual",
+      }),
+    downloadUpdate,
+    installUpdate,
     pickDrawings: async (parentWindow) => {
       const info = await pickDrawings(parentWindow);
       if (info) {
@@ -525,6 +548,8 @@ void app.whenReady().then(async () => {
     createGreetingWindow();
   }
 
+  void runUpdateCheck({ alertOnFail: false, trigger: "boot" });
+
   app.on("second-instance", () => {
     void surfacePrimaryUi().catch((error) => log.error("[ui] surface failed", error));
   });
@@ -549,6 +574,7 @@ app.on("before-quit", (event) => {
     !isWindowReady(win)
   ) {
     void watcher?.stop();
+    stopAutoUpdater();
     return;
   }
 

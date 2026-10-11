@@ -23,6 +23,14 @@ const schema = {
     type: ["string", "null"],
     default: null,
   },
+  stagedUpdateVersion: {
+    type: ["string", "null"],
+    default: null,
+  },
+  declinedUpdateVersion: {
+    type: ["string", "null"],
+    default: null,
+  },
   theme: {
     type: "string",
     enum: ["light", "dark", "system"],
@@ -45,6 +53,10 @@ const schema = {
   showRecents: {
     type: "boolean",
     default: true,
+  },
+  autoDownloadUpdates: {
+    type: "boolean",
+    default: false,
   },
 };
 

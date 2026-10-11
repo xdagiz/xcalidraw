@@ -33,7 +33,7 @@ vi.mock("./settings", () => ({
   windowBgColor: () => "#ffffff",
 }));
 
-import { WINDOW_WILL_CLOSE } from "@shared/channels";
+import { WINDOW_CLOSE_CANCELLED, WINDOW_WILL_CLOSE } from "@shared/channels";
 
 class FakeWindow extends EventEmitter {
   destroyed = false;
@@ -121,6 +121,57 @@ describe("close guard", () => {
     await flushTicks();
     return requestId;
   };
+
+  it("runs a quit callback only after the renderer approves the close", () => {
+    const { win, browserWindow } = setupWindow();
+    const onApproved = vi.fn(() => true);
+
+    closeGuard.requestQuitViaRenderer(browserWindow, { onApproved });
+    const requestId = sentRequestId(win, 0);
+
+    expect(onApproved).not.toHaveBeenCalled();
+    closeGuard.onDirtyState(browserWindow, requestId, false, false);
+
+    expect(onApproved).toHaveBeenCalledOnce();
+    expect(win.destroyed).toBe(false);
+    expect(closeGuard.isQuittingNow()).toBe(true);
+
+    closeGuard.abortApprovedQuit(browserWindow);
+
+    expect(closeGuard.isQuittingNow()).toBe(false);
+    expect(win.webContents.send).toHaveBeenCalledWith(WINDOW_CLOSE_CANCELLED);
+  });
+
+  it("cancels a pending quit callback when the user cancels the close prompt", async () => {
+    const { win, browserWindow } = setupWindow();
+    const onCancelled = vi.fn();
+    mocks.showMessageBox.mockResolvedValue({ response: 2 });
+
+    closeGuard.requestQuitViaRenderer(browserWindow, { onCancelled });
+    const requestId = sentRequestId(win, 0);
+    closeGuard.onDirtyState(browserWindow, requestId, true, false);
+    await flushTicks();
+
+    expect(onCancelled).toHaveBeenCalledOnce();
+    expect(closeGuard.isQuittingNow()).toBe(false);
+    expect(win.destroyed).toBe(false);
+  });
+
+  it("restores the window when an approved quit callback cannot start", () => {
+    const { win, browserWindow } = setupWindow();
+    const onCancelled = vi.fn();
+
+    closeGuard.requestQuitViaRenderer(browserWindow, {
+      onApproved: () => false,
+      onCancelled,
+    });
+    const requestId = sentRequestId(win, 0);
+    closeGuard.onDirtyState(browserWindow, requestId, false, false);
+
+    expect(onCancelled).toHaveBeenCalledOnce();
+    expect(closeGuard.isQuittingNow()).toBe(false);
+    expect(win.destroyed).toBe(false);
+  });
 
   it.each(dialogChoices)(
     "processes a dirty-state answer that arrives while the not-responding dialog is open, after the user chooses $label",

@@ -17,6 +17,11 @@ import { windowBgColor } from "./settings";
 
 type QuitState = "idle" | "pending";
 
+type QuitCallbacks = {
+  onApproved?: () => boolean | void;
+  onCancelled?: () => void;
+};
+
 type CloseState = {
   awaitingRenderer: boolean;
   requestId: number;
@@ -33,6 +38,7 @@ type CloseState = {
 };
 
 let quitState: QuitState = "idle";
+let quitCallbacks: QuitCallbacks | null = null;
 let isQuitting = false;
 let osShutdown = false;
 let nextCloseRequestId = 0;
@@ -129,6 +135,15 @@ export const showUnsavedChangesDialog = async (
   return "cancel";
 };
 
+const cancelPendingQuit = () => {
+  if (quitState !== "pending") return;
+
+  const callbacks = quitCallbacks;
+  quitState = "idle";
+  quitCallbacks = null;
+  callbacks?.onCancelled?.();
+};
+
 const closeWindow = (win: BrowserWindow, reason?: string) => {
   if (win.isDestroyed()) return;
 
@@ -136,9 +151,29 @@ const closeWindow = (win: BrowserWindow, reason?: string) => {
   clearCloseRequest(win);
 
   const wasQuit = quitState === "pending";
+  const callbacks = wasQuit ? quitCallbacks : null;
   quitState = "idle";
+  quitCallbacks = null;
 
   if (reason) log.warn(`[close-guard] ${reason}`);
+  if (wasQuit && callbacks?.onApproved) {
+    isQuitting = true;
+    let approved = false;
+    try {
+      approved = callbacks.onApproved() !== false;
+    } catch (error) {
+      log.error("[close-guard] quit approval callback failed", error);
+    }
+
+    if (!approved) {
+      isQuitting = false;
+      approvedCloses.delete(win);
+      callbacks.onCancelled?.();
+      sendToRenderer(win, WINDOW_CLOSE_CANCELLED);
+    }
+    return;
+  }
+
   win.destroy();
   if (wasQuit) {
     isQuitting = true;
@@ -250,6 +285,14 @@ const beginCloseFlow = (win: BrowserWindow) => {
 
 export const isQuittingNow = () => isQuitting;
 
+export const abortApprovedQuit = (win: BrowserWindow | null) => {
+  isQuitting = false;
+  if (!win || win.isDestroyed()) return;
+
+  approvedCloses.delete(win);
+  sendToRenderer(win, WINDOW_CLOSE_CANCELLED);
+};
+
 export const enterOsShutdownMode = () => {
   osShutdown = true;
 };
@@ -307,10 +350,12 @@ export const installCloseGuard = (win: BrowserWindow) => {
   });
 };
 
-export const requestQuitViaRenderer = (win: BrowserWindow) => {
-  if (quitState === "pending") return;
+export const requestQuitViaRenderer = (win: BrowserWindow, callbacks?: QuitCallbacks) => {
+  if (quitState === "pending") return false;
   quitState = "pending";
+  quitCallbacks = callbacks ?? null;
   beginCloseFlow(win);
+  return true;
 };
 
 export const onDirtyState = (
@@ -353,7 +398,7 @@ export const onDirtyState = (
         return;
       }
       clearCloseRequest(win);
-      if (quitState === "pending") quitState = "idle";
+      cancelPendingQuit();
       sendToRenderer(win, WINDOW_CLOSE_CANCELLED);
       return;
     }
@@ -370,7 +415,7 @@ export const onDirtyState = (
 
     if (choice === "cancel") {
       clearCloseRequest(win);
-      if (quitState === "pending") quitState = "idle";
+      cancelPendingQuit();
       sendToRenderer(win, WINDOW_CLOSE_CANCELLED);
       return;
     }
@@ -404,7 +449,7 @@ export const cancelQuit = (win: BrowserWindow, requestId: number) => {
   if (!isCurrentCloseRequest(win, requestId)) return;
 
   clearCloseRequest(win);
-  if (quitState === "pending") quitState = "idle";
+  cancelPendingQuit();
   sendToRenderer(win, WINDOW_CLOSE_CANCELLED);
 };
 
