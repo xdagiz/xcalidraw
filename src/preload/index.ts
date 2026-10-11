@@ -23,6 +23,11 @@ import {
   STORE_SET,
   THUMBNAILS_GET,
   THUMBNAILS_PUT,
+  UPDATES_CHECK,
+  UPDATES_DOWNLOAD,
+  UPDATES_INSTALL,
+  UPDATES_STATUS,
+  UPDATES_STATUS_GET,
   WATCHER_ERROR,
   WINDOW_CANCEL_QUIT,
   WINDOW_CLOSE,
@@ -39,6 +44,7 @@ import type { ChannelMap, ChannelName } from "@shared/ipc";
 import type {
   FilesChangedEvent,
   LibraryReturnedEvent,
+  UpdateStatus,
   WatcherErrorEvent,
   WindowCloseRequest,
 } from "@shared/ipc";
@@ -122,6 +128,17 @@ const api: NativeApi = {
   settings: {
     get: () => invoke(SETTINGS_GET),
     update: (updates) => invoke(SETTINGS_SET, updates),
+  },
+  updates: {
+    getStatus: () => invoke(UPDATES_STATUS_GET),
+    check: () => invoke(UPDATES_CHECK),
+    download: () => invoke(UPDATES_DOWNLOAD),
+    install: () => invoke(UPDATES_INSTALL),
+    onStatus: (cb) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: UpdateStatus) => cb(payload);
+      ipcRenderer.on(UPDATES_STATUS, listener);
+      return () => ipcRenderer.removeListener(UPDATES_STATUS, listener);
+    },
   },
   thumbnails: {
     get: (ids) => invoke(THUMBNAILS_GET, ids),

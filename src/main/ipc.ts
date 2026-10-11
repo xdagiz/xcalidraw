@@ -25,6 +25,10 @@ import {
   STORE_SET,
   THUMBNAILS_GET,
   THUMBNAILS_PUT,
+  UPDATES_CHECK,
+  UPDATES_DOWNLOAD,
+  UPDATES_INSTALL,
+  UPDATES_STATUS_GET,
   WINDOW_CANCEL_QUIT,
   WINDOW_CLOSE,
   WINDOW_DIRTY_STATE,
@@ -55,6 +59,7 @@ import type {
   ThumbnailRecord,
   UnsavedChoice,
   UnsavedReason,
+  UpdateStatus,
 } from "@shared/ipc";
 import { parseRecentFileHistory } from "@shared/recent-history";
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol } from "electron";
@@ -325,6 +330,10 @@ type Deps = {
   updateSettings: (update: SettingsUpdate) => AppSettings;
   getThumbnails: (ids: string[]) => Promise<ThumbnailRecord[]>;
   saveThumbnail: (record: ThumbnailRecord) => Promise<void>;
+  getUpdateStatus: () => UpdateStatus;
+  checkForUpdates: () => Promise<UpdateStatus>;
+  downloadUpdate: () => UpdateStatus;
+  installUpdate: () => void;
 };
 
 const windowFromEvent = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) => {
@@ -694,4 +703,9 @@ export const registerIpcHandlers = (deps: Deps) => {
         });
     }
   });
+
+  handle(UPDATES_STATUS_GET, "unexpected", () => deps.getUpdateStatus());
+  handle(UPDATES_CHECK, "unexpected", () => deps.checkForUpdates());
+  handle(UPDATES_DOWNLOAD, "unexpected", () => deps.downloadUpdate());
+  handle(UPDATES_INSTALL, "unexpected", () => deps.installUpdate());
 };

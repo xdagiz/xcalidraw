@@ -34,6 +34,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { TreeContainer, TreeRow, useFileTree, type FileTreeItem } from "@/components/ui/tree";
+import { UpdateIndicator } from "@/components/update-indicator";
 import { useExpandedFolders } from "@/hooks/use-expanded-folders";
 import { toAppError, type AppError } from "@/lib/app-error";
 import { formatRelativeTimeShort } from "@/lib/relative-time";
@@ -579,6 +580,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
 
         <SidebarFooter>
           <SidebarMenu>
+            <UpdateIndicator />
             <SidebarMenuItem>
               <SidebarMenuButton onClick={onOpenSettings}>
                 <SettingsIcon />

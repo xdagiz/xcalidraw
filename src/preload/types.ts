@@ -13,6 +13,7 @@ import type {
   ThumbnailRecord,
   UnsavedChoice,
   UnsavedReason,
+  UpdateStatus,
   WatcherErrorEvent,
   WindowCloseRequest,
 } from "@shared/ipc";
@@ -55,6 +56,13 @@ export interface NativeApi {
   settings: {
     get: () => Promise<AppSettings>;
     update: (updated: SettingsUpdate) => Promise<AppSettings>;
+  };
+  updates: {
+    getStatus: () => Promise<UpdateStatus>;
+    check: () => Promise<UpdateStatus>;
+    download: () => Promise<UpdateStatus>;
+    install: () => Promise<void>;
+    onStatus: (cb: (status: UpdateStatus) => void) => () => void;
   };
   thumbnails: {
     get: (ids: string[]) => Promise<ThumbnailRecord[]>;

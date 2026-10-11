@@ -166,6 +166,14 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
     }
   };
 
+  const handleAutoDownloadChange = async (value: boolean) => {
+    try {
+      await updateSettings({ autoDownloadUpdates: value });
+    } catch (error) {
+      toast.add({ title: toAppError(error, "settings").detail, type: "error" });
+    }
+  };
+
   const handleChangeFolder = async () => {
     setPickingFolder(true);
     try {
@@ -272,6 +280,22 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
               id="show-recents"
               checked={settings.showRecents}
               onCheckedChange={(value) => void handleShowRecentsChange(value)}
+            />
+          </Field>
+        </div>
+
+        <div className="pt-6">
+          <p className="text-muted-foreground text-xs font-medium">Updates</p>
+          <Field orientation="horizontal" className="mt-3">
+            <FieldContent>
+              <FieldLabel htmlFor="auto-download-updates">
+                Download updates automatically
+              </FieldLabel>
+            </FieldContent>
+            <Switch
+              id="auto-download-updates"
+              checked={settings.autoDownloadUpdates}
+              onCheckedChange={(value) => void handleAutoDownloadChange(value)}
             />
           </Field>
         </div>

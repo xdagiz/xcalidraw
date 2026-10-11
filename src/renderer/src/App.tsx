@@ -3,6 +3,7 @@ import { CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 
 import { conflictKeyOf, fileNameOf } from "@/lib/conflicts";
 import { useStore } from "@/lib/store";
+import { subscribeToUpdateStatus, useUpdatesStore } from "@/lib/updates";
 import { stripExcalidraw } from "@/lib/utils";
 
 import { AppSidebar } from "./components/app-sidebar";
@@ -43,6 +44,7 @@ const App = () => {
   const setPaletteOpen = useStore((s) => s.setPaletteOpen);
   const searchOpen = useStore((s) => s.searchOpen);
   const setSearchOpen = useStore((s) => s.setSearchOpen);
+  const applyUpdateStatus = useUpdatesStore((s) => s.applyStatus);
   const setOpenFileId = useStore((s) => s.setOpenFileId);
 
   const conflictPromptRef = useRef<string | null>(null);
@@ -144,6 +146,8 @@ const App = () => {
   useEffect(() => {
     return window.api.files.onChanged((event) => applyEntries(event));
   }, [applyEntries]);
+
+  useEffect(() => subscribeToUpdateStatus(applyUpdateStatus), [applyUpdateStatus]);
 
   useEffect(() => {
     if (!externalConflict) {
