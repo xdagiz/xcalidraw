@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import { selectRecentLibrary, selectSwitcherCandidates } from "@/lib/recent-files";
+import { RECENTS_LIMIT, selectRecentFiles, selectSwitcherCandidates } from "@/lib/recent-files";
 import { useStore } from "@/lib/store";
 
 export const useRecentDrawings = (limit?: number) => {
@@ -9,7 +9,8 @@ export const useRecentDrawings = (limit?: number) => {
   const showRecents = useStore((s) => s.settings.showRecents);
 
   const recentFiles = useMemo(
-    () => (showRecents ? selectRecentLibrary(recentFileIds, entries, limit) : []),
+    () =>
+      showRecents ? selectRecentFiles(recentFileIds, entries).slice(0, limit ?? RECENTS_LIMIT) : [],
     [showRecents, recentFileIds, entries, limit],
   );
 
@@ -23,7 +24,10 @@ export const useRecentDrawings = (limit?: number) => {
 
 export const useSwitcherCandidates = () => {
   const entries = useStore((s) => s.entries);
-  const recentFileIds = useStore((s) => s.recentFileIds);
+  const switcherFileIds = useStore((s) => s.switcherFileIds);
 
-  return useMemo(() => selectSwitcherCandidates(recentFileIds, entries), [recentFileIds, entries]);
+  return useMemo(
+    () => selectSwitcherCandidates(switcherFileIds, entries),
+    [switcherFileIds, entries],
+  );
 };

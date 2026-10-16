@@ -89,7 +89,9 @@ beforeEach(() => {
   vi.useFakeTimers();
   write.mockReset().mockResolvedValue(entry(150));
   unsavedChanges.mockReset().mockResolvedValue("cancel");
-  vi.stubGlobal("window", { api: { files: { write }, dialog: { unsavedChanges } } });
+  vi.stubGlobal("window", {
+    api: { files: { write }, dialog: { unsavedChanges }, store: { set: vi.fn() } },
+  });
   useStore.setState(useStore.getInitialState(), true);
   useStore.setState({ entries: [entry(100)], openFileId: fileId, editorGeneration: 7 });
 });
@@ -248,7 +250,7 @@ describe("missing-file recovery", () => {
         useStore.getState().loadSnapshot({
           info: { path: "/other", displayName: "Other", configured: true, missing: false },
           entries: [{ ...entry(900), id: "other.excalidraw", name: "other.excalidraw" }],
-          prefs: { lastOpenedFileId: null },
+          prefs: { lastOpenedFileId: null, recentFileIds: [] },
         });
       }
       const state = useStore.getState();

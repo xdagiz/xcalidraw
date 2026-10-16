@@ -7,7 +7,6 @@ import {
   remapRecentIds,
   removeRecentIds,
   selectRecentFiles,
-  selectRecentLibrary,
 } from "./recent-files";
 
 const entry = (id: string, kind: "file" | "directory" = "file"): FileEntry => ({
@@ -86,48 +85,5 @@ describe("selectRecentFiles", () => {
     expect(selected).toHaveLength(RECENTS_LIMIT);
     expect(selected[0]?.id).toBe("file-0");
     expect(selected.some((e) => e.id === `file-${count - 1}`)).toBe(false);
-  });
-});
-
-describe("selectRecentLibrary", () => {
-  const entries = [entry("file-a"), entry("dir-1", "directory"), entry("file-b"), entry("file-c")];
-
-  it("puts opened files first, then fills by mtime with never-opened ones", () => {
-    const newer = { ...entry("file-d"), modifiedAt: 900 };
-    const selected = selectRecentLibrary(["file-b"], [entries[0], entries[2], entries[3], newer]);
-    expect(selected.map((e) => e.id)).toEqual(["file-b", "file-d", "file-a", "file-c"]);
-  });
-
-  it("never returns directories", () => {
-    const selected = selectRecentLibrary([], entries);
-    expect(selected.some((e) => e.kind === "directory")).toBe(false);
-  });
-
-  it("dedupes files that are both opened and newest", () => {
-    const newer = { ...entry("file-b"), modifiedAt: 900 };
-    const selected = selectRecentLibrary(["file-b"], [entries[0], entries[2], newer]);
-    expect(selected.map((e) => e.id)).toEqual(["file-b", "file-a"]);
-  });
-
-  it("caps at the limit with opened files winning their seats", () => {
-    const pool = Array.from({ length: RECENTS_LIMIT + 3 }, (_, i) =>
-      entry(`file-${String(i).padStart(2, "0")}`),
-    );
-    const ids = ["file-13", "file-14"];
-    const selected = selectRecentLibrary(ids, pool);
-    expect(selected).toHaveLength(RECENTS_LIMIT);
-    expect(selected[0]?.id).toBe("file-13");
-    expect(selected[1]?.id).toBe("file-14");
-    expect(selected[11]?.id).toBe("file-09");
-    expect(selected.some((e) => e.id === "file-12")).toBe(false);
-  });
-
-  it("falls back to pure mtime order with no persisted ids", () => {
-    const pool = [
-      { ...entry("old"), modifiedAt: 10 },
-      { ...entry("new"), modifiedAt: 20 },
-    ];
-    const selected = selectRecentLibrary([], pool);
-    expect(selected.map((e) => e.id)).toEqual(["new", "old"]);
   });
 });

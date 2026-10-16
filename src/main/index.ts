@@ -39,7 +39,7 @@ import {
 } from "./ipc";
 import { initLogger, log } from "./logger";
 import { applyTheme, getSettings, setSettings, applyWindowBgColor } from "./settings";
-import { getLastOpenedFileId } from "./store";
+import { getLastOpenedFileId, getRecentFileIds } from "./store";
 import { pruneThumbnailCache, readThumbnailRecords, writeThumbnailRecord } from "./thumbnails";
 import { createDrawingsWatcher, type DrawingsWatcher } from "./watcher";
 import {
@@ -466,6 +466,7 @@ void app.whenReady().then(async () => {
         entries,
         prefs: {
           lastOpenedFileId: getLastOpenedFileId(),
+          recentFileIds: getRecentFileIds(info.path),
         },
       };
     },

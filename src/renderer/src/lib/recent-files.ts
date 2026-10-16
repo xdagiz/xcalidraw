@@ -1,11 +1,16 @@
 import type { FileEntry } from "@shared/ipc";
+import { RECENT_FILE_LIMIT } from "@shared/recent-history";
 
-export const RECENTS_LIMIT = 12;
+export const RECENTS_LIMIT = RECENT_FILE_LIMIT;
 export const SWITCHER_LIMIT = 3;
 
-export const pushRecentId = (ids: string[], id: string) => {
-  return [id, ...ids.filter((existing) => existing !== id)].slice(0, RECENTS_LIMIT);
+const pushMruId = (ids: string[], id: string, limit: number) => {
+  return [id, ...ids.filter((existing) => existing !== id)].slice(0, limit);
 };
+
+export const pushRecentId = (ids: string[], id: string) => pushMruId(ids, id, RECENTS_LIMIT);
+
+export const pushSwitcherId = (ids: string[], id: string) => pushMruId(ids, id, SWITCHER_LIMIT);
 
 export const removeRecentIds = (ids: string[], predicate: (id: string) => boolean) => {
   return ids.filter((id) => !predicate(id));
@@ -38,23 +43,6 @@ export const selectRecentFiles = (ids: string[], entries: FileEntry[]): FileEntr
   }
 
   return selected;
-};
-
-export const selectRecentLibrary = (
-  ids: string[],
-  entries: FileEntry[],
-  limit: number = RECENTS_LIMIT,
-): FileEntry[] => {
-  const opened = selectRecentFiles(ids, entries);
-  if (opened.length >= limit) return opened.slice(0, limit);
-
-  const openedIds = new Set(opened.map((entry) => entry.id));
-  const rest = entries
-    .filter((entry) => entry.kind === "file" && !openedIds.has(entry.id))
-    .toSorted((a, b) => b.modifiedAt - a.modifiedAt)
-    .slice(0, limit - opened.length);
-
-  return [...opened, ...rest];
 };
 
 export const selectSwitcherCandidates = (ids: string[], entries: FileEntry[]): FileEntry[] => {

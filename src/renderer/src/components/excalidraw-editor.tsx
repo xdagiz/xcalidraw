@@ -24,6 +24,7 @@ import {
   FilePlus2Icon,
   FolderOpen,
   RefreshCwIcon,
+  SearchIcon,
   TriangleAlertIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -41,6 +42,7 @@ import {
 } from "@/components/ui/empty";
 import { useSidebar } from "@/components/ui/sidebar";
 import { toast } from "@/components/ui/toast";
+import { useRecentDrawings } from "@/hooks/use-recent-drawings";
 import { useTheme } from "@/hooks/use-theme";
 import { libraryErrorToastId, saveErrorToastId, toAppError, type AppError } from "@/lib/app-error";
 import { createDrawingSession, drawingSignature } from "@/lib/drawing-session";
@@ -139,7 +141,11 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const { toggleSidebar, open } = useSidebar();
   const createAndOpenEntry = useStore((s) => s.createAndOpenEntry);
   const pickAndSwitchFolder = useStore((s) => s.pickAndSwitchFolder);
-
+  const setOpenFileId = useStore((s) => s.setOpenFileId);
+  const setSearchOpen = useStore((s) => s.setSearchOpen);
+  const drawings = useStore((s) => s.drawings);
+  const entries = useStore((s) => s.entries);
+  const homeReturnFileId = useStore((s) => s.homeReturnFileId);
   const pendingCanvasAction = useStore((s) => s.pendingCanvasAction);
   const isLoadingDrawings = useStore((s) => s.isLoadingDrawings);
   const autosave = useStore((s) => s.settings.autosave);
@@ -148,6 +154,18 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const settingsDialogOpen = useStore((s) => s.settingsDialogOpen);
   const paletteOpen = useStore((s) => s.paletteOpen);
   const searchOpen = useStore((s) => s.searchOpen);
+
+  const { recentFiles } = useRecentDrawings();
+  const hasConfiguredDrawingsFolder = drawings?.configured && !drawings.missing;
+  const showEmptyRecentsWelcome =
+    showRecents && hasConfiguredDrawingsFolder && recentFiles.length === 0;
+  const homeReturnEntry = useMemo(
+    () =>
+      homeReturnFileId === null
+        ? undefined
+        : entries.find((entry) => entry.id === homeReturnFileId && entry.kind === "file"),
+    [homeReturnFileId, entries],
+  );
   const fileName = useStore((s) =>
     fileId ? (s.entries.find((e) => e.id === fileId)?.name ?? fileId) : "",
   );
@@ -467,6 +485,10 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
     void useStore.getState().openHome();
   }, []);
 
+  const handleBrowseDrawings = useCallback(() => {
+    setSearchOpen(true);
+  }, [setSearchOpen]);
+
   const handleChooseFolder = useCallback(() => {
     if (useStore.getState().pendingCanvasAction) return;
     void pickAndSwitchFolder();
@@ -600,7 +622,21 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
           }}
         >
           {fileId === null ? (
-            <WelcomeShared heading="Start drawing, it stays on this device">
+            <WelcomeShared
+              heading={
+                showEmptyRecentsWelcome
+                  ? "Nothing recent yet"
+                  : "Start drawing, it stays on this device"
+              }
+            >
+              {homeReturnEntry && (
+                <WelcomeScreen.Center.MenuItem
+                  onSelect={() => void setOpenFileId(homeReturnEntry.id)}
+                  icon={<ArrowLeftIcon size={16} />}
+                >
+                  Back to {stripExcalidraw(homeReturnEntry.name)}
+                </WelcomeScreen.Center.MenuItem>
+              )}
               <WelcomeScreen.Center.MenuItem
                 onSelect={handleCreate}
                 icon={<FilePlus2Icon size={16} />}
@@ -608,13 +644,23 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
               >
                 New drawing
               </WelcomeScreen.Center.MenuItem>
-              <WelcomeScreen.Center.MenuItem
-                onSelect={handleChooseFolder}
-                icon={<FolderOpen size={16} />}
-                disabled={pendingCanvasAction}
-              >
-                Choose folder
-              </WelcomeScreen.Center.MenuItem>
+              {hasConfiguredDrawingsFolder ? (
+                <WelcomeScreen.Center.MenuItem
+                  onSelect={handleBrowseDrawings}
+                  icon={<SearchIcon size={16} />}
+                  disabled={pendingCanvasAction}
+                >
+                  Browse drawings
+                </WelcomeScreen.Center.MenuItem>
+              ) : (
+                <WelcomeScreen.Center.MenuItem
+                  onSelect={handleChooseFolder}
+                  icon={<FolderOpen size={16} />}
+                  disabled={pendingCanvasAction}
+                >
+                  Choose folder
+                </WelcomeScreen.Center.MenuItem>
+              )}
             </WelcomeShared>
           ) : (
             <WelcomeShared heading="Start drawing.">

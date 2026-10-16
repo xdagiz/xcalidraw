@@ -18,7 +18,7 @@ export const useSwitcher = ({ paletteOpen = false }: UseSwitcherOptions = {}) =>
     createSwitcherController({
       getCandidates: () =>
         selectSwitcherCandidates(
-          useStore.getState().recentFileIds,
+          useStore.getState().switcherFileIds,
           useStore.getState().entries,
         ).map((entry) => entry.id),
       canSwitchNow: () => {

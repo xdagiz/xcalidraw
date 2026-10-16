@@ -2,6 +2,7 @@ import { renameSync } from "node:fs";
 import { join } from "node:path";
 
 import { AUTOSAVE_PRESETS_MS, DEFAULT_AUTOSAVE, DEFAULT_THEME, StoreType } from "@shared/ipc";
+import { recentFileIdsForRoot } from "@shared/recent-history";
 import { app } from "electron";
 import Store from "electron-store";
 
@@ -15,6 +16,10 @@ const schema = {
     type: ["string", "null"],
   },
   libraryItems: {
+    type: ["string", "null"],
+    default: null,
+  },
+  recentFiles: {
     type: ["string", "null"],
     default: null,
   },
@@ -65,5 +70,8 @@ export const getDrawingPath = () => nonEmptyString(store.get("drawingsPath"));
 export const setDrawingPath = (newPath: string) => store.set("drawingsPath", newPath);
 
 export const getLastOpenedFileId = () => nonEmptyString(store.get("lastOpenedFileId"));
+
+export const getRecentFileIds = (rootPath: string | null) =>
+  recentFileIdsForRoot(store.get("recentFiles"), rootPath);
 
 const nonEmptyString = (val: unknown) => (typeof val === "string" && val.length > 0 ? val : null);

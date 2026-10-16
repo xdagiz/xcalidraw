@@ -56,6 +56,7 @@ import type {
   UnsavedChoice,
   UnsavedReason,
 } from "@shared/ipc";
+import { parseRecentFileHistory } from "@shared/recent-history";
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol } from "electron";
 
 import { log } from "./logger";
@@ -366,7 +367,7 @@ export const normalizeContextMenuPos = (x: number, y: number, zoomFactor: number
 };
 
 export function assertRendererStoreKey(key: unknown): asserts key is RendererStoreKey {
-  if (key !== "lastOpenedFileId" && key !== "libraryItems") {
+  if (key !== "lastOpenedFileId" && key !== "libraryItems" && key !== "recentFiles") {
     throw codedError("Store key is not allowed", {
       code: "INVALID",
       reason: "invalid-payload",
@@ -458,6 +459,23 @@ export const registerIpcHandlers = (deps: Deps) => {
             code: "TOO_LARGE",
             reason: "library-too-large",
             limit: MAX_LIBRARY_STORE_BYTES,
+          });
+        }
+        value = raw;
+      }
+    } else if (key === "recentFiles") {
+      if (raw === null) {
+        value = null;
+      } else {
+        if (
+          typeof raw !== "string" ||
+          Buffer.byteLength(raw, "utf8") > 64 * 1024 ||
+          parseRecentFileHistory(raw) === null
+        ) {
+          throw codedError("value must be a valid recent-file history", {
+            code: "INVALID",
+            reason: "invalid-payload",
+            field: "value",
           });
         }
         value = raw;

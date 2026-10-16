@@ -3,7 +3,7 @@ import type { RendererSafeError } from "./errors";
 
 export const FILE_NOT_FOUND_MESSAGE = "File not found";
 
-export type RendererStoreKey = "lastOpenedFileId" | "libraryItems";
+export type RendererStoreKey = "lastOpenedFileId" | "libraryItems" | "recentFiles";
 
 export type ContextMenuRequest = {
   items: { id: string; label: string }[];
@@ -87,6 +87,7 @@ export type DrawingInfo = {
 
 export type Prefs = {
   lastOpenedFileId: string | null;
+  recentFileIds: string[];
 };
 
 export type FileEntry = {
@@ -133,6 +134,7 @@ export type StoreType = {
   drawingsPath?: string;
   lastOpenedFileId?: string | null;
   libraryItems?: string | null;
+  recentFiles?: string | null;
   theme?: ThemePreference;
   autosave?: unknown;
   reopenLastDrawing?: boolean;
