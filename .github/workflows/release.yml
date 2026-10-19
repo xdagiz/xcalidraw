@@ -1,0 +1,168 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Verify tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(jq -r .version package.json)"
+          if [ "$tag" != "$version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $version" >&2
+            exit 1
+          fi
+
+      - uses: voidzero-dev/setup-vp@v1.21.1
+        with:
+          node-version: "24"
+          cache: true
+          run-install: false
+
+      - name: Install
+        run: vp install --frozen-lockfile
+
+      - name: Check
+        run: vp check
+
+      - name: Typecheck
+        run: vp run typecheck
+
+      - name: Test
+        run: vp test
+
+  build:
+    name: Build (${{ matrix.platform }})
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+            arch_label: mac-both
+            arch_args: --x64 --arm64
+            targets: dmg zip
+            electron_cache: ~/Library/Caches/electron
+
+          - os: windows-latest
+            platform: win
+            arch_label: x64
+            arch_args: --x64
+            targets: nsis
+            electron_cache: ~\AppData\Local\electron\Cache
+
+          - os: ubuntu-latest
+            platform: linux
+            arch_label: x64
+            arch_args: --x64
+            targets: AppImage deb rpm
+            electron_cache: ~/.cache/electron
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: voidzero-dev/setup-vp@v1.21.1
+        with:
+          node-version: "24"
+          cache: ${{ matrix.platform != 'win' }}
+          run-install: false
+
+      - name: Resolve package store path
+        if: matrix.platform == 'win'
+        id: package-store
+        shell: pwsh
+        run: '"path=$(vp pm cache dir)" >> $env:GITHUB_OUTPUT'
+
+      - name: Cache package store
+        if: matrix.platform == 'win'
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.package-store.outputs.path }}
+          key: windows-release-store-v1-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Cache Electron downloads
+        uses: actions/cache@v6
+        with:
+          path: ${{ matrix.electron_cache }}
+          key: electron-${{ matrix.platform }}-${{ matrix.arch_label }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install
+        run: vp install --frozen-lockfile
+
+      - name: Build
+        run: vp run build
+
+      - name: Package
+        run: vp exec -- electron-builder --${{ matrix.platform }} ${{ matrix.targets }} ${{ matrix.arch_args }} --publish never
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ matrix.platform }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+            dist/latest.yml
+            dist/latest-mac.yml
+            dist/latest-linux.yml
+            dist/*.blockmap
+          if-no-files-found: error
+          overwrite: true
+
+  publish:
+    name: Publish draft
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            test "$(gh release view "$tag" -R "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = "true"
+            gh release upload "$tag" dist/* -R "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$tag" dist/* -R "$GITHUB_REPOSITORY" --draft --verify-tag --title "${tag#v}" --notes "Release ${tag#v}"
+          fi
