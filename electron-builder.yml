@@ -21,7 +21,7 @@ win:
   executableName: xcalidraw
   icon: assets/icon.ico
 nsis:
-  artifactName: ${name}-${version}-setup.${ext}
+  artifactName: ${name}-${version}-${arch}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
@@ -29,11 +29,14 @@ nsis:
   installerHeaderIcon: assets/icon.ico
 mac:
   icon: assets/icon.icns
-  notarize: false
+  target:
+    - dmg
+    - zip
+  artifactName: ${name}-${version}-${arch}.${ext}
   extendInfo:
     LSMultipleInstancesProhibited: true
 dmg:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${name}-${version}-${arch}.${ext}
 linux:
   icon: assets/icon.png
   target:
@@ -43,9 +46,15 @@ linux:
   maintainer: xdagiz
   category: Utility
 appImage:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${name}-${version}-${arch}.${ext}
+deb:
+  artifactName: ${name}-${version}-${arch}.${ext}
+rpm:
+  artifactName: ${name}-${version}-${arch}.${ext}
 npmRebuild: false
 publish:
   provider: github
   owner: xdagiz
   repo: xcalidraw
+  channel: latest
+  releaseType: draft

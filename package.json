@@ -1,6 +1,13 @@
 {
   "name": "xcalidraw",
   "version": "0.1.0",
+  "description": "A local-first desktop app for managing Excalidraw drawings.",
+  "author": "xdagiz",
+  "homepage": "https://github.com/xdagiz/xcalidraw",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xdagiz/xcalidraw.git"
+  },
   "type": "module",
   "private": true,
   "main": "./out/main/index.js",
