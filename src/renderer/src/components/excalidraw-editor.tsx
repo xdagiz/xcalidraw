@@ -1,4 +1,5 @@
 import {
+  CaptureUpdateAction,
   Excalidraw,
   WelcomeScreen,
   restoreAppState,
@@ -7,6 +8,7 @@ import {
 } from "@excalidraw/excalidraw";
 
 import "@excalidraw/excalidraw/index.css";
+import type { RestoredDataState } from "@excalidraw/excalidraw/data/restore";
 import type {
   ExcalidrawElement,
   OrderedExcalidrawElement,
@@ -47,6 +49,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { libraryErrorToastId, saveErrorToastId, toAppError, type AppError } from "@/lib/app-error";
 import { createDrawingSession, drawingSignature } from "@/lib/drawing-session";
 import { createLibraryPersistenceAdapter, defaultLibraryStorage } from "@/lib/library-persistence";
+import { createSceneSwitchController } from "@/lib/scene-switching";
 import { createScratchController } from "@/lib/scratch-session";
 import { sessionOwner } from "@/lib/session-owner";
 import { useStore } from "@/lib/store";
@@ -60,7 +63,11 @@ type DrawingData = {
 };
 
 type LoadedDrawing = {
-  drawing: ExcalidrawInitialDataState | null;
+  drawing: {
+    elements: OrderedExcalidrawElement[];
+    appState: RestoredDataState["appState"];
+    files?: ExcalidrawInitialDataState["files"];
+  };
   baseline: string | null;
 };
 
@@ -148,9 +155,9 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const homeReturnFileId = useStore((s) => s.homeReturnFileId);
   const pendingCanvasAction = useStore((s) => s.pendingCanvasAction);
   const isLoadingDrawings = useStore((s) => s.isLoadingDrawings);
+  const editorGeneration = useStore((s) => s.editorGeneration);
   const autosave = useStore((s) => s.settings.autosave);
   const showRecents = useStore((s) => s.settings.showRecents);
-  const editorGeneration = useStore((s) => s.editorGeneration);
   const settingsDialogOpen = useStore((s) => s.settingsDialogOpen);
   const paletteOpen = useStore((s) => s.paletteOpen);
   const searchOpen = useStore((s) => s.searchOpen);
@@ -171,6 +178,11 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   );
 
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const sceneLoadingRef = useRef(false);
+  const sceneLoadCancelRef = useRef<(() => void) | null>(null);
+  const loadedFileIdRef = useRef<string | null | undefined>(undefined);
+  const loadedGenerationRef = useRef(editorGeneration);
+  const [sceneSwitcher] = useState(createSceneSwitchController);
   const [scratch] = useState(() =>
     createScratchController({
       createEntry: () => useStore.getState().createEntry(null, "file"),
@@ -243,7 +255,6 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   );
 
   const [loadError, setLoadError] = useState<{ fileId: string; error: AppError } | null>(null);
-  const [loadAttempt, setLoadAttempt] = useState(0);
   const [excalidrawApi, setExcalidrawApi] = useState<ExcalidrawImperativeAPI | null>(null);
 
   const libraryAdapter = useMemo(
@@ -347,29 +358,115 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
     }
 
     scratch.invalidate();
+    if (fileId !== null) scratch.bindFile(fileId);
+  }, [fileId, scratch]);
 
-    if (fileId === null) {
-      const api = excalidrawApi;
-      const reset = () => {
-        api?.resetScene();
-        api?.history.clear();
-      };
-      if (api && api.getAppState().isLoading) {
-        const unsubscribe = api.onChange((_elements, appState) => {
-          if (appState.isLoading) return;
-          unsubscribe();
-          if (scratch.getState().phase === "bound") return;
-          reset();
-        });
-      } else {
-        reset();
+  const loadScene = useCallback(
+    (force = false) => {
+      sceneLoadCancelRef.current?.();
+      sceneLoadCancelRef.current = null;
+
+      if (!excalidrawApi) return undefined;
+
+      sceneLoadingRef.current = true;
+
+      if (fileId === null) {
+        sceneSwitcher.invalidate();
+        void excalidrawApi
+          .replaceScene({
+            elements: [],
+            appState: { isLoading: false },
+            files: {},
+          })
+          .catch((error: unknown) => console.error("Failed to clear drawing:", error));
+        sceneLoadingRef.current = false;
+        return undefined;
       }
-    }
 
-    if (fileId === null) return;
+      if (!force && scratch.isCanvasSeeded(fileId)) {
+        // The drawing was materialised from this canvas: its content is already
+        // here and the file on disk is still empty, so loading it would wipe the
+        // canvas and drop the stroke.
+        sceneLoadingRef.current = false;
+        return undefined;
+      }
 
-    scratch.bindFile(fileId);
-  }, [fileId, excalidrawApi, scratch]);
+      let cancelled = false;
+      let cancelRequest: (() => void) | null = null;
+      const cancel = () => {
+        cancelled = true;
+        cancelRequest?.();
+      };
+      sceneLoadCancelRef.current = cancel;
+
+      void (async () => {
+        await excalidrawApi
+          .replaceScene({
+            elements: [],
+            appState: { isLoading: true },
+            files: {},
+          })
+          .catch((error: unknown) => console.error("Failed to prepare drawing:", error));
+        if (cancelled) return;
+
+        cancelRequest = sceneSwitcher.start(
+          () => loadDrawing(fileId),
+          async ({ drawing, baseline }, isCurrent) => {
+            if (!isCurrent() || useStore.getState().openFileId !== fileId) return;
+
+            const session = scratch.getSession();
+            session?.setInitialBaseline(baseline);
+            await excalidrawApi.replaceScene({
+              elements: drawing.elements,
+              appState: { ...drawing.appState, isLoading: true },
+              files: drawing.files ?? {},
+            });
+            if (!isCurrent() || useStore.getState().openFileId !== fileId) return;
+
+            excalidrawApi.updateScene({
+              appState: { isLoading: false },
+              captureUpdate: CaptureUpdateAction.NEVER,
+            });
+            sceneLoadingRef.current = false;
+            setLoadError(null);
+          },
+          (error) => {
+            if (useStore.getState().openFileId !== fileId) return;
+
+            console.error("Failed to load drawing:", error);
+            scratch.getSession()?.invalidate();
+            void excalidrawApi
+              .replaceScene({
+                elements: [],
+                appState: { isLoading: false },
+                files: {},
+              })
+              .catch((clearError: unknown) =>
+                console.error("Failed to clear drawing:", clearError),
+              );
+            sceneLoadingRef.current = false;
+            setLoadError({ fileId, error: toAppError(error, "read") });
+          },
+        );
+        if (cancelled) cancelRequest();
+      })();
+
+      return cancel;
+    },
+    [fileId, excalidrawApi, scratch, sceneSwitcher],
+  );
+
+  useLayoutEffect(() => {
+    const generationChanged = loadedGenerationRef.current !== editorGeneration;
+    loadedGenerationRef.current = editorGeneration;
+    const fileChanged = loadedFileIdRef.current !== fileId;
+    loadedFileIdRef.current = fileId;
+    loadScene(generationChanged && !fileChanged);
+    return () => {
+      sceneLoadCancelRef.current?.();
+      sceneLoadCancelRef.current = null;
+    };
+  }, [editorGeneration, fileId, loadScene]);
 
   useEffect(() => {
     if (!isLoadingDrawings) return;
@@ -430,23 +527,6 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
     openRef.current = open;
   }, [open]);
 
-  const initialData = useMemo(
-    () => async () => {
-      if (fileId === null) return null;
-      try {
-        const loaded = await loadDrawing(fileId);
-        scratch.getSession()?.setInitialBaseline(loaded.baseline);
-        return loaded.drawing;
-      } catch (error) {
-        console.error("Failed to load drawing:", error);
-        scratch.getSession()?.invalidate();
-        setLoadError({ fileId, error: toAppError(error, "read") });
-        return null;
-      }
-    },
-    [fileId, scratch],
-  );
-
   useHotkey(
     "Mod+S",
     () => {
@@ -466,8 +546,6 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
     },
     { enabled: !settingsDialogOpen && !paletteOpen && !searchOpen },
   );
-
-  const innerKey = `${editorGeneration}:${loadAttempt}`;
 
   const handleCreate = useCallback(() => {
     if (useStore.getState().pendingCanvasAction) return;
@@ -496,6 +574,8 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
 
   const handleChange = useCallback(
     (elements: readonly OrderedExcalidrawElement[], appState: AppState, files: BinaryFiles) => {
+      if (sceneLoadingRef.current) return;
+
       if (fileId !== null) {
         if (!appState.isLoading) viewportCache.set(fileId, viewportOf(appState));
         scratch.getSession()?.onChange(elements, appState, files);
@@ -571,48 +651,17 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
     if (button) button.innerHTML = SIDEBAR_TOGGLE_ICONS[open ? "open" : "closed"];
   }, [open]);
 
-  if (loadError && fileId !== null && loadError.fileId === fileId) {
-    return (
-      <div ref={editorRef} className="relative h-full min-h-0 w-full overflow-hidden">
-        <Empty className="bg-background h-full border-0">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <TriangleAlertIcon className="text-destructive" />
-            </EmptyMedia>
-            <EmptyTitle>{loadError.error.title}</EmptyTitle>
-            <EmptyDescription>
-              {loadError.error.message}
-              <span className="mt-1 block font-mono text-xs break-all">{fileName}</span>
-            </EmptyDescription>
-          </EmptyHeader>
-          <EmptyContent className="flex-row justify-center">
-            <Button
-              onClick={() => {
-                setLoadError(null);
-                setLoadAttempt((attempt) => attempt + 1);
-              }}
-            >
-              <RefreshCwIcon />
-              Retry
-            </Button>
-          </EmptyContent>
-        </Empty>
-      </div>
-    );
-  }
-
   return (
     <div ref={editorRef} className="relative h-full min-h-0 w-full overflow-hidden">
       <ErrorBoundary
         title="The drawing editor stopped working"
         description="Try again. Your saved drawings are still available from the sidebar."
-        resetKeys={[loadAttempt, fileId]}
+        resetKeys={[fileId]}
       >
         <Excalidraw
-          key={innerKey}
           theme={theme}
           excalidrawAPI={handleExcalidrawApi}
-          initialData={initialData}
+          initialData={null}
           onChange={handleChange}
           UIOptions={{
             canvasActions: {
@@ -677,6 +726,33 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
           )}
         </Excalidraw>
       </ErrorBoundary>
+      {loadError && fileId !== null && loadError.fileId === fileId && (
+        <div className="bg-background/95 absolute inset-0 z-50 flex items-center justify-center">
+          <Empty className="bg-background h-full border-0">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <TriangleAlertIcon className="text-destructive" />
+              </EmptyMedia>
+              <EmptyTitle>{loadError.error.title}</EmptyTitle>
+              <EmptyDescription>
+                {loadError.error.message}
+                <span className="mt-1 block font-mono text-xs break-all">{fileName}</span>
+              </EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent className="flex-row justify-center">
+              <Button
+                onClick={() => {
+                  setLoadError(null);
+                  loadScene(true);
+                }}
+              >
+                <RefreshCwIcon />
+                Retry
+              </Button>
+            </EmptyContent>
+          </Empty>
+        </div>
+      )}
     </div>
   );
 };

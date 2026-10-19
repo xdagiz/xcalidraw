@@ -38,6 +38,7 @@ export type ScratchController = {
   getSession: () => BoundDrawingSession | null;
   getScene: () => PendingScene | null;
   isReserved: (fileId: string) => boolean;
+  isCanvasSeeded: (fileId: string) => boolean;
   capture: (
     elements: readonly OrderedExcalidrawElement[],
     appState: AppState,
@@ -55,6 +56,7 @@ export const createScratchController = (deps: ScratchDeps): ScratchController =>
   let state: ScratchState = { phase: "idle" };
   let epoch = 0;
   let starting = false;
+  let canvasSeededFileId: string | null = null;
 
   const discardOp = (fileId: string, preserveScene: PendingScene | null) => {
     const current = state;
@@ -76,6 +78,7 @@ export const createScratchController = (deps: ScratchDeps): ScratchController =>
 
   const abortCurrent = () => {
     starting = false;
+    canvasSeededFileId = null;
 
     const current = state;
     state = { phase: "idle" };
@@ -189,6 +192,10 @@ export const createScratchController = (deps: ScratchDeps): ScratchController =>
     },
     getScene: currentScene,
     isReserved: (fileId) => state.phase === "reserved" && state.fileId === fileId,
+    isCanvasSeeded: (fileId) => {
+      if (state.phase === "reserved" && state.fileId === fileId) return true;
+      return canvasSeededFileId === fileId;
+    },
     capture: (elements, appState, files) => {
       const current = state;
       const scene: PendingScene = { elements, appState, files };
@@ -212,6 +219,7 @@ export const createScratchController = (deps: ScratchDeps): ScratchController =>
     bindFile: (fileId) => {
       if (state.phase === "reserved" && state.fileId === fileId) {
         state = { phase: "bound", fileId, session: state.session };
+        canvasSeededFileId = fileId;
         deps.setScratchUnsaved(false);
         return;
       }

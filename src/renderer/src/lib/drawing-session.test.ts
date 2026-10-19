@@ -6,17 +6,23 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vite-plus/test"
 vi.mock("@excalidraw/excalidraw", () => ({
   serializeAsJSON: (
     elements: unknown,
-    appState: { viewBackgroundColor?: string },
+    appState: Record<string, unknown>,
     files: unknown,
-  ) =>
-    JSON.stringify({
+    type?: "local" | "database",
+  ) => {
+    const exportedAppState =
+      type === "local"
+        ? Object.fromEntries(Object.entries(appState).filter(([key]) => key !== "theme"))
+        : appState;
+    return JSON.stringify({
       type: "excalidraw",
       version: 2,
       source: "https://excalidraw.com",
       elements,
-      appState,
+      appState: exportedAppState,
       files,
-    }),
+    });
+  },
 }));
 
 import {
@@ -94,6 +100,13 @@ describe("createDrawingSession", () => {
 
     expect(dirty).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
+  });
+
+  it("does not write the canvas theme into the file", () => {
+    const { session } = makeSession();
+    session.onChange([el("a")], { ...appState(), theme: "dark" }, emptyFiles);
+
+    expect(JSON.parse(session.getSerializedContent()!).appState).not.toHaveProperty("theme");
   });
 
   it("marks dirty and autosaves on user changes after the baseline", async () => {

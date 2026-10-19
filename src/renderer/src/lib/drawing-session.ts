@@ -91,6 +91,12 @@ export const drawingSignature = (
     gridModeEnabled: appState.gridModeEnabled,
   });
 
+const serializeSnapshot = (
+  elements: readonly OrderedExcalidrawElement[],
+  appState: AppState,
+  files: BinaryFiles,
+) => serializeAsJSON(elements, appState, files, "local");
+
 export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionControls => {
   const {
     fileId,
@@ -245,7 +251,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     savesInFlight += 1;
 
     try {
-      const json = serializeAsJSON(targetElements, targetAppState, targetFiles, "local");
+      const json = serializeSnapshot(targetElements, targetAppState, targetFiles);
       const ok = await save(currentFileId, json, origin);
       if (disposed || mySeq <= (ok ? persistedSeq : appliedSeq)) return ok;
       appliedSeq = Math.max(appliedSeq, mySeq);
@@ -400,7 +406,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
   const getSerializedContent = () => {
     if (!latestDrawing) return null;
     const [elements, appState, files] = latestDrawing;
-    return serializeAsJSON(elements, appState, files, "local");
+    return serializeSnapshot(elements, appState, files);
   };
 
   const evaluateLatest = () => {
@@ -514,7 +520,7 @@ export const createDrawingSession = (deps: DrawingSessionDeps): DrawingSessionCo
     if (disposed || !latestDrawing || latestDrawing[1].isLoading) return null;
     runPendingEvaluation();
     const [elements, appState, files] = latestDrawing;
-    const content = serializeAsJSON(elements, appState, files, "local");
+    const content = serializeSnapshot(elements, appState, files);
     const signature = signatureFor(elements, appState, files);
     const capturedLifetime = lifetime;
     const mySeq = ++saveSeq;
