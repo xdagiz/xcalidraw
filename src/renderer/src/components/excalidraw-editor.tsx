@@ -73,8 +73,11 @@ type LoadedDrawing = {
 
 const viewportCache = createViewportCache();
 
-const loadDrawing = async (fileId: string): Promise<LoadedDrawing> => {
-  const content = await window.api.files.read(fileId);
+const loadDrawing = async (
+  fileId: string,
+  sessionContent?: string | null,
+): Promise<LoadedDrawing> => {
+  const content = sessionContent ?? (await window.api.files.read(fileId));
   const parsed: DrawingData = JSON.parse(content);
   const rawElements = Array.isArray(parsed.elements) ? parsed.elements : [];
   const files = parsed.files ?? undefined;
@@ -87,7 +90,7 @@ const loadDrawing = async (fileId: string): Promise<LoadedDrawing> => {
 
   return {
     drawing: { elements, appState, files },
-    baseline: drawingSignature(elements, appState, files),
+    baseline: sessionContent == null ? drawingSignature(elements, appState, files) : null,
   };
 };
 
@@ -182,6 +185,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const sceneLoadCancelRef = useRef<(() => void) | null>(null);
   const loadedFileIdRef = useRef<string | null | undefined>(undefined);
   const loadedGenerationRef = useRef(editorGeneration);
+  const seededSceneApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const [sceneSwitcher] = useState(createSceneSwitchController);
   const [scratch] = useState(() =>
     createScratchController({
@@ -277,9 +281,15 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
 
   useHandleLibrary({ excalidrawAPI: excalidrawApi, adapter: libraryAdapter });
 
-  const handleExcalidrawApi = useCallback((api: ExcalidrawImperativeAPI) => {
-    setExcalidrawApi(api);
-  }, []);
+  const handleExcalidrawApi = useCallback(
+    (api: ExcalidrawImperativeAPI) => {
+      if (fileId !== null && scratch.isCanvasSeeded(fileId) && seededSceneApiRef.current !== api) {
+        sceneLoadingRef.current = true;
+      }
+      setExcalidrawApi(api);
+    },
+    [fileId, scratch],
+  );
 
   useEffect(() => {
     return () => setExcalidrawApi(null);
@@ -384,10 +394,9 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         return undefined;
       }
 
-      if (!force && scratch.isCanvasSeeded(fileId)) {
-        // The drawing was materialised from this canvas: its content is already
-        // here and the file on disk is still empty, so loading it would wipe the
-        // canvas and drop the stroke.
+      const canvasSeeded = scratch.isCanvasSeeded(fileId);
+      if (!force && canvasSeeded && seededSceneApiRef.current === excalidrawApi) {
+        // Keep the seeded scene only while this exact editor instance owns it.
         sceneLoadingRef.current = false;
         return undefined;
       }
@@ -411,19 +420,22 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         if (cancelled) return;
 
         cancelRequest = sceneSwitcher.start(
-          () => loadDrawing(fileId),
+          () => {
+            const content = canvasSeeded ? scratch.getSession()?.getSerializedContent() : null;
+            return loadDrawing(fileId, content);
+          },
           async ({ drawing, baseline }, isCurrent) => {
             if (!isCurrent() || useStore.getState().openFileId !== fileId) return;
 
             const session = scratch.getSession();
-            session?.setInitialBaseline(baseline);
+            if (baseline !== null) session?.setInitialBaseline(baseline);
             await excalidrawApi.replaceScene({
               elements: drawing.elements,
               appState: { ...drawing.appState, isLoading: true },
               files: drawing.files ?? {},
             });
             if (!isCurrent() || useStore.getState().openFileId !== fileId) return;
-
+            if (canvasSeeded) seededSceneApiRef.current = excalidrawApi;
             sceneLoadingRef.current = false;
             excalidrawApi.updateScene({
               appState: { isLoading: false },
@@ -580,13 +592,17 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
       }
 
       if (appState.isLoading) return;
+      if (excalidrawApi && elements.some((element) => !element.isDeleted)) {
+        seededSceneApiRef.current = excalidrawApi;
+      }
+
       const reserved = scratch.getState();
       if (reserved.phase === "reserved") {
         viewportCache.set(reserved.fileId, viewportOf(appState));
       }
       scratch.capture(elements, appState, files);
     },
-    [fileId, scratch],
+    [fileId, scratch, excalidrawApi],
   );
 
   // TODO: update this with renderTopLeftUI when a new release includes it
@@ -654,6 +670,9 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         title="The drawing editor stopped working"
         description="Try again. Your saved drawings are still available from the sidebar."
         resetKeys={[fileId]}
+        onReset={() => {
+          sceneLoadingRef.current = true;
+        }}
       >
         <Excalidraw
           theme={theme}
