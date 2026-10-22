@@ -328,4 +328,40 @@ describe("scratch controller", () => {
     expect(h.calls.viewports).toEqual([]);
     expect(h.calls.deleted).toEqual([]);
   });
+
+  it("marks a drawing materialised from the canvas as canvas seeded", async () => {
+    const h = harness();
+
+    h.controller.capture([el("a")], appState, files);
+    await flush();
+
+    expect(h.controller.getState().phase).toBe("reserved");
+    expect(h.controller.isCanvasSeeded("new.excalidraw")).toBe(true);
+    expect(h.controller.isCanvasSeeded("other.excalidraw")).toBe(false);
+
+    h.controller.bindFile("new.excalidraw");
+
+    expect(h.controller.getState().phase).toBe("bound");
+    expect(h.controller.isCanvasSeeded("new.excalidraw")).toBe(true);
+  });
+
+  it("stops treating a drawing as canvas seeded once it is released", async () => {
+    const h = harness();
+
+    h.controller.capture([el("a")], appState, files);
+    await flush();
+    h.controller.bindFile("new.excalidraw");
+
+    h.controller.invalidate();
+
+    expect(h.controller.isCanvasSeeded("new.excalidraw")).toBe(false);
+  });
+
+  it("does not mark a drawing opened from disk as canvas seeded", () => {
+    const h = harness();
+
+    h.controller.bindFile("open.excalidraw");
+
+    expect(h.controller.isCanvasSeeded("open.excalidraw")).toBe(false);
+  });
 });
