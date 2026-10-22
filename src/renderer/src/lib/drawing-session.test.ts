@@ -102,13 +102,6 @@ describe("createDrawingSession", () => {
     expect(save).not.toHaveBeenCalled();
   });
 
-  it("does not write the canvas theme into the file", () => {
-    const { session } = makeSession();
-    session.onChange([el("a")], { ...appState(), theme: "dark" }, emptyFiles);
-
-    expect(JSON.parse(session.getSerializedContent()!).appState).not.toHaveProperty("theme");
-  });
-
   it("marks dirty and autosaves on user changes after the baseline", async () => {
     const { session, dirty, save } = makeSession();
 

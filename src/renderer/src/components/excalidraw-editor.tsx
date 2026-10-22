@@ -369,6 +369,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
       if (!excalidrawApi) return undefined;
 
       sceneLoadingRef.current = true;
+      setLoadError((current) => (current?.fileId === fileId ? null : current));
 
       if (fileId === null) {
         sceneSwitcher.invalidate();
@@ -423,11 +424,12 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
             });
             if (!isCurrent() || useStore.getState().openFileId !== fileId) return;
 
+            sceneLoadingRef.current = false;
             excalidrawApi.updateScene({
               appState: { isLoading: false },
               captureUpdate: CaptureUpdateAction.NEVER,
             });
-            sceneLoadingRef.current = false;
+
             setLoadError(null);
           },
           (error) => {
@@ -435,16 +437,11 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
 
             console.error("Failed to load drawing:", error);
             scratch.getSession()?.invalidate();
-            void excalidrawApi
-              .replaceScene({
-                elements: [],
-                appState: { isLoading: false },
-                files: {},
-              })
-              .catch((clearError: unknown) =>
-                console.error("Failed to clear drawing:", clearError),
-              );
-            sceneLoadingRef.current = false;
+            excalidrawApi.updateScene({
+              appState: { isLoading: false },
+              captureUpdate: CaptureUpdateAction.NEVER,
+            });
+
             setLoadError({ fileId, error: toAppError(error, "read") });
           },
         );
