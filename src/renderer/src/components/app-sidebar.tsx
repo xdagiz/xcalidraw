@@ -45,6 +45,7 @@ import { TreeContainer, TreeRow, useFileTree, type FileTreeItem } from "@/compon
 import { UpdateIndicator } from "@/components/update-indicator";
 import { useExpandedFolders } from "@/hooks/use-expanded-folders";
 import { toAppError, type AppError } from "@/lib/app-error";
+import { remapId } from "@/lib/entry-tree";
 import { formatRelativeTimeShort } from "@/lib/relative-time";
 import { useStore } from "@/lib/store";
 import {
@@ -84,6 +85,7 @@ type DragPreview = {
   offsetX: number;
   offsetY: number;
   width: number;
+  outside: boolean;
 };
 
 type TreeClipboard = { op: "copy" | "cut"; id: string } | null;
@@ -221,7 +223,9 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   const renameValueRef = useRef<string>("");
   const listRef = useRef<HTMLDivElement | null>(null);
   const treeItemsRef = useRef(treeItems);
+  const dragPointerX = useRef<number | null>(null);
   const dragPointerY = useRef<number | null>(null);
+  const pasting = useRef(false);
   const dragScrollFrame = useRef<number | null>(null);
   const dragCleanup = useRef<(() => void) | null>(null);
   const expandTimer = useRef<number | null>(null);
@@ -251,18 +255,20 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     updateScrollMetrics();
   }, [tree, updateScrollMetrics]);
 
-  const hitAtClientY = useCallback((clientY: number) => {
+  const hitAtClientPoint = useCallback((clientX: number, clientY: number) => {
     const list = listRef.current;
     const viewport = contentRef.current;
     const rows = treeItemsRef.current;
-    if (!list || !viewport) return { parentId: null, row: null };
+    if (!list || !viewport) return { inside: false, parentId: null, row: null };
 
     const viewportRect = viewport.getBoundingClientRect();
-    if (clientY < viewportRect.top || clientY > viewportRect.bottom) {
-      return {
-        parentId: null,
-        row: null,
-      };
+    if (
+      clientX < viewportRect.left ||
+      clientX > viewportRect.right ||
+      clientY < viewportRect.top ||
+      clientY > viewportRect.bottom
+    ) {
+      return { inside: false, parentId: null, row: null };
     }
 
     const offset = clientY - list.getBoundingClientRect().top;
@@ -277,13 +283,14 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     );
 
     if (offset < 0 || offset >= rows.length * TREE_ROW_HEIGHT) {
-      return { parentId, row: null };
+      return { inside: true, parentId, row: null };
     }
 
     const row = rows[Math.floor(offset / TREE_ROW_HEIGHT)];
-    if (!row) return { parentId, row: null };
+    if (!row) return { inside: true, parentId, row: null };
 
     return {
+      inside: true,
       parentId,
       row: {
         id: row.id,
@@ -294,6 +301,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   }, []);
 
   const stopDragScroll = useCallback(() => {
+    dragPointerX.current = null;
     dragPointerY.current = null;
     if (dragScrollFrame.current !== null) {
       cancelAnimationFrame(dragScrollFrame.current);
@@ -320,6 +328,9 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
         if (!moved) return null;
         if (moved.id !== sourceId) {
           setExpandedItems((current) => [...remapExpandedIds(current, sourceId, moved.id)]);
+          setClipboard((current) =>
+            current ? { ...current, id: remapId(current.id, sourceId, moved.id) } : current,
+          );
         }
         expandIds(ancestorIdsOf(moved.id));
         focusRequest.current = moved.id;
@@ -352,7 +363,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
     toast.add({ title: `${verb} ${stripExcalidraw(entry.name)}`, type: "success" });
   }, []);
 
-  const pasteAt = useCallback(
+  const runPaste = useCallback(
     async (target: FileEntry | null) => {
       if (!clipboard) return;
       const source = entriesById.get(clipboard.id);
@@ -368,6 +379,13 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
 
       const dest = pasteParentId(target);
       if (clipboard.op === "cut") {
+        const reparent = canReparent(source.id, dest, entries);
+        if (!reparent.ok && reparent.reason === "same-parent") {
+          toast.add({ title: "Already in this folder", type: "info" });
+          setClipboard(null);
+          return;
+        }
+
         const moved = await performMove(source.id, dest);
         if (moved) setClipboard(null);
         return;
@@ -385,7 +403,18 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
         toast.add({ title: appError.title, description: appError.message, type: "error" });
       }
     },
-    [clipboard, copyEntry, entriesById, expandIds, performMove],
+    [clipboard, copyEntry, entries, entriesById, expandIds, performMove],
+  );
+
+  const pasteAt = useCallback(
+    async (target: FileEntry | null) => {
+      if (pasting.current) return;
+      pasting.current = true;
+      await runPaste(target).finally(() => {
+        pasting.current = false;
+      });
+    },
+    [runPaste],
   );
 
   const handleRowPointerDown = useCallback(
@@ -437,25 +466,33 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
       };
 
       const follow = (clientX: number, clientY: number) => {
-        const hit = hitAtClientY(clientY);
+        const hit = hitAtClientPoint(clientX, clientY);
         armExpand(hit.row);
+        const outside = !hit.inside;
         setDragPreview((current) => {
           if (!current) {
             return {
               ...lifted,
               parentId: hit.parentId,
+              outside,
               x: clientX,
               y: clientY,
             };
           }
 
-          if (current.parentId === hit.parentId && current.x === clientX && current.y === clientY) {
+          if (
+            current.parentId === hit.parentId &&
+            current.outside === outside &&
+            current.x === clientX &&
+            current.y === clientY
+          ) {
             return current;
           }
 
           return {
             ...current,
             parentId: hit.parentId,
+            outside,
             x: clientX,
             y: clientY,
           };
@@ -463,9 +500,10 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
       };
 
       const tick = () => {
+        const x = dragPointerX.current;
         const y = dragPointerY.current;
         const viewport = contentRef.current;
-        if (y === null || !viewport || !active || cancelled) {
+        if (x === null || y === null || !viewport || !active || cancelled) {
           dragScrollFrame.current = null;
           return;
         }
@@ -486,11 +524,11 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
           updateScrollMetrics();
         }
 
-        const hit = hitAtClientY(y);
+        const hit = hitAtClientPoint(x, y);
         armExpand(hit.row);
         setDragPreview((current) =>
-          current && current.parentId !== hit.parentId
-            ? { ...current, parentId: hit.parentId }
+          current && (current.parentId !== hit.parentId || current.outside === hit.inside)
+            ? { ...current, parentId: hit.parentId, outside: !hit.inside }
             : current,
         );
 
@@ -513,6 +551,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
         }
 
         if (cancelled) return;
+        dragPointerX.current = ev.clientX;
         dragPointerY.current = ev.clientY;
 
         follow(ev.clientX, ev.clientY);
@@ -532,13 +571,16 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
         if (ev.pointerId !== pointerId) return;
         const wasActive = active;
         const wasCancelled = cancelled || ev.type === "pointercancel";
-        const dest = hitAtClientY(ev.clientY).parentId;
+        const hit = hitAtClientPoint(ev.clientX, ev.clientY);
         cleanup();
         active = false;
         setDragPreview(null);
         stopDragScroll();
-        if (!wasActive || wasCancelled) return;
-        void performMoveRef.current(sourceId, dest);
+        if (wasActive) {
+          window.setTimeout(() => window.removeEventListener("click", stopDragClick, true), 0);
+        }
+        if (!wasActive || wasCancelled || !hit.inside) return;
+        void performMoveRef.current(sourceId, hit.parentId);
       };
 
       const onKey = (ev: KeyboardEvent) => {
@@ -557,7 +599,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
       window.addEventListener("pointercancel", finish);
       window.addEventListener("keydown", onKey);
     },
-    [expandIds, hitAtClientY, renamingId, stopDragScroll, updateScrollMetrics],
+    [expandIds, hitAtClientPoint, renamingId, stopDragScroll, updateScrollMetrics],
   );
 
   useEffect(() => {
@@ -682,6 +724,9 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
           targetId = renamed.id;
           if (targetId !== fileId) {
             setExpandedItems((current) => [...remapExpandedIds(current, fileId, targetId)]);
+            setClipboard((current) =>
+              current ? { ...current, id: remapId(current.id, fileId, targetId) } : current,
+            );
           }
 
           // Fresh drawings skip the toast; first rename is part of creation.
@@ -855,9 +900,18 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
       ? firstVisibleRow + visibleRowCount
       : Math.max(firstVisibleRow + visibleRowCount, focusedTreeRow + 1);
   const visibleTreeItems = treeItems.slice(virtualStart, virtualEnd);
-  const dropFolderId = dragPreview?.parentId ?? null;
-
-  if (clipboard?.op === "cut" && !entriesById.has(clipboard.id)) setClipboard(null);
+  const dropFolderId = dragPreview && !dragPreview.outside ? dragPreview.parentId : null;
+  let dropRegion: { top: number; height: number } | null = null;
+  if (dropFolderId !== null) {
+    const start = treeItems.findIndex((row) => row.id === dropFolderId);
+    if (start !== -1) {
+      const prefix = `${dropFolderId}/`;
+      const next = treeItems.findIndex((row, index) => index > start && !row.id.startsWith(prefix));
+      const end = next === -1 ? treeItems.length : next;
+      dropRegion = { top: start * TREE_ROW_HEIGHT, height: (end - start) * TREE_ROW_HEIGHT };
+    }
+  }
+  const dropRoot = dragPreview !== null && !dragPreview.outside && dragPreview.parentId === null;
 
   return (
     <>
@@ -953,7 +1007,8 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
                 ) : (
                   <TreeContainer
                     tree={tree}
-                    dropRoot={dragPreview !== null && dropFolderId === null}
+                    dropRoot={dropRoot}
+                    dragging={dragPreview !== null}
                     onKeyDown={handleContainerKeyDown}
                     onContextMenu={(e) => {
                       if (e.target === e.currentTarget) void openRootMenu(e.clientX, e.clientY);
@@ -963,6 +1018,13 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
                       ref={listRef}
                       style={{ height: treeItems.length * TREE_ROW_HEIGHT, position: "relative" }}
                     >
+                      {dropRegion && (
+                        <div
+                          aria-hidden
+                          className="bg-sidebar-accent/40 pointer-events-none absolute inset-x-0 rounded-md"
+                          style={{ top: dropRegion.top, height: dropRegion.height }}
+                        />
+                      )}
                       <div
                         style={{
                           position: "absolute",
@@ -1006,11 +1068,6 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
                                   isDirty={dirtyById[entry.id] !== undefined}
                                   isCut={clipboard?.op === "cut" && clipboard.id === entry.id}
                                   isDragging={dragPreview?.sourceId === entry.id}
-                                  isDropTarget={
-                                    dropFolderId !== null &&
-                                    (entry.id === dropFolderId ||
-                                      entry.id.startsWith(`${dropFolderId}/`))
-                                  }
                                   onPointerDown={(event) => handleRowPointerDown(entry.id, event)}
                                   timeLabel={
                                     entry.kind === "file"

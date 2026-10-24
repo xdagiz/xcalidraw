@@ -163,6 +163,7 @@ export const TreeContainer = ({
   tree,
   className,
   dropRoot,
+  dragging,
   onKeyDown,
   onContextMenu,
   children,
@@ -170,6 +171,7 @@ export const TreeContainer = ({
   tree: FileTreeInstance;
   className?: string;
   dropRoot?: boolean;
+  dragging?: boolean;
   onKeyDown?: KeyboardEventHandler<HTMLDivElement>;
   onContextMenu?: MouseEventHandler<HTMLDivElement>;
   children: ReactNode;
@@ -180,7 +182,8 @@ export const TreeContainer = ({
     <div
       {...containerProps}
       data-drop-root={dropRoot ? "true" : undefined}
-      className={cn(className, dropRoot && "bg-sidebar-accent/40")}
+      data-dragging={dragging ? "true" : undefined}
+      className={cn(className, dropRoot && "bg-sidebar-accent/40", dragging&& "[&_*]:pointer-events-none")}
       onKeyDown={(event) => {
         treeOnKeyDown?.(event);
         onKeyDown?.(event);
@@ -197,7 +200,6 @@ export const TreeRow = ({
   isActive,
   isDirty,
   isCut,
-  isDropTarget,
   isDragging,
   indentPx = 16,
   timeLabel,
@@ -209,7 +211,6 @@ export const TreeRow = ({
   isActive?: boolean;
   isDirty?: boolean;
   isCut?: boolean;
-  isDropTarget?: boolean;
   isDragging?: boolean;
   indentPx?: number;
   timeLabel?: string;
@@ -237,7 +238,7 @@ export const TreeRow = ({
   }
 
   const rowClassName =
-    "group/row relative flex h-7 w-full items-center gap-1.5 rounded-md pr-2 transition-colors outline-hidden hover:bg-sidebar-accent/60 focus-within:z-10 has-[:focus-visible]:ring-1.5 has-[:focus-visible]:ring-sidebar-ring data-[active=true]:bg-sidebar-accent data-[cut=true]:opacity-50 data-[dragging=true]:opacity-0 data-[drop-target=true]:bg-sidebar-accent";
+    "group/row relative flex h-7 w-full items-center gap-1.5 rounded-md pr-2 transition-colors outline-hidden hover:bg-sidebar-accent/60 focus-within:z-10 has-[:focus-visible]:ring-1.5 has-[:focus-visible]:ring-sidebar-ring data-[active=true]:bg-sidebar-accent data-[cut=true]:opacity-50 data-[dragging=true]:opacity-0";
 
   if (isFolder) {
     return (
@@ -245,7 +246,6 @@ export const TreeRow = ({
         data-active={isActive ? "true" : undefined}
         data-cut={isCut ? "true" : undefined}
         data-dragging={isDragging ? "true" : undefined}
-        data-drop-target={isDropTarget ? "true" : undefined}
         onContextMenu={onContextMenu}
         onPointerDown={onPointerDown}
         className={rowClassName}
@@ -303,10 +303,9 @@ export const TreeRow = ({
       data-dirty={isDirty ? "true" : undefined}
       data-cut={isCut ? "true" : undefined}
       data-dragging={isDragging ? "true" : undefined}
-      data-drop-target={isDropTarget ? "true" : undefined}
       onContextMenu={onContextMenu}
       onPointerDown={onPointerDown}
-      className="group/row relative flex h-7 w-full items-center gap-1.5 rounded-md pr-2 outline-hidden focus-within:z-10 has-[:focus-visible]:ring-1.5 has-[:focus-visible]:ring-sidebar-ring data-[cut=true]:opacity-50 data-[dragging=true]:opacity-0 data-[drop-target=true]:bg-sidebar-accent"
+      className="group/row relative flex h-7 w-full items-center gap-1.5 rounded-md pr-2 outline-hidden focus-within:z-10 has-[:focus-visible]:ring-1.5 has-[:focus-visible]:ring-sidebar-ring data-[cut=true]:opacity-50 data-[dragging=true]:opacity-0"
     >
       <span
         aria-hidden
