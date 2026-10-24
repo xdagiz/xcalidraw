@@ -67,11 +67,12 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   const deleteEntry = useStore((s) => s.deleteEntry);
   const settingsDialogOpen = useStore((s) => s.settingsDialogOpen);
   const paletteOpen = useStore((s) => s.paletteOpen);
+  const editorPaletteOpen = useStore((s) => s.editorPaletteOpen);
   const searchOpen = useStore((s) => s.searchOpen);
   const setSearchOpen = useStore((s) => s.setSearchOpen);
   const isLoadingDrawings = useStore((s) => s.isLoadingDrawings);
   const showRecents = useStore((s) => s.settings.showRecents);
-  const dialogsOpen = settingsDialogOpen || paletteOpen || searchOpen;
+  const dialogsOpen = settingsDialogOpen || paletteOpen || editorPaletteOpen || searchOpen;
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameError, setRenameError] = useState<AppError | null>(null);

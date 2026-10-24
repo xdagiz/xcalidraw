@@ -8,9 +8,13 @@ import { createSwitcherController, type SwitcherState } from "@/lib/switcher-con
 
 type UseSwitcherOptions = {
   paletteOpen?: boolean;
+  editorPaletteOpen?: boolean;
 };
 
-export const useSwitcher = ({ paletteOpen = false }: UseSwitcherOptions = {}) => {
+export const useSwitcher = ({
+  paletteOpen = false,
+  editorPaletteOpen = false,
+}: UseSwitcherOptions = {}) => {
   const [state, setState] = useState<SwitcherState>({ phase: "idle" });
   const heldKeysRef = useRef<Set<string>>(new Set());
   const detachReleaseRef = useRef<(() => void) | null>(null);
@@ -23,8 +27,13 @@ export const useSwitcher = ({ paletteOpen = false }: UseSwitcherOptions = {}) =>
         ).map((entry) => entry.id),
       canSwitchNow: () => {
         if (isCloseHandshakeActive()) return false;
-        const { externalConflict, settingsDialogOpen, searchOpen } = useStore.getState();
-        return !externalConflict && !settingsDialogOpen && !searchOpen;
+        const {
+          externalConflict,
+          settingsDialogOpen,
+          editorPaletteOpen: editorPaletteActive,
+          searchOpen,
+        } = useStore.getState();
+        return !externalConflict && !settingsDialogOpen && !editorPaletteActive && !searchOpen;
       },
       commit: (fileId) => {
         void useStore.getState().setOpenFileId(fileId);
@@ -64,8 +73,15 @@ export const useSwitcher = ({ paletteOpen = false }: UseSwitcherOptions = {}) =>
     }
   };
 
-  useHotkey("Control+Tab", () => cycle(1), { preventDefault: false, enabled: !paletteOpen });
-  useHotkey("Control+Shift+Tab", () => cycle(-1), { preventDefault: false, enabled: !paletteOpen });
+  useHotkey("Control+Tab", () => cycle(1), {
+    preventDefault: false,
+    enabled: !paletteOpen && !editorPaletteOpen,
+  });
+
+  useHotkey("Control+Shift+Tab", () => cycle(-1), {
+    preventDefault: false,
+    enabled: !paletteOpen && !editorPaletteOpen,
+  });
 
   useEffect(() => {
     if (state.phase !== "cycling") return undefined;

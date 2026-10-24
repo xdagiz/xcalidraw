@@ -32,6 +32,7 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import { EditorCommandPalette } from "@/components/editor-command-palette";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Button } from "@/components/ui/button";
 import {
@@ -163,6 +164,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const showRecents = useStore((s) => s.settings.showRecents);
   const settingsDialogOpen = useStore((s) => s.settingsDialogOpen);
   const paletteOpen = useStore((s) => s.paletteOpen);
+  const editorPaletteOpen = useStore((s) => s.editorPaletteOpen);
   const searchOpen = useStore((s) => s.searchOpen);
 
   const { recentFiles } = useRecentDrawings();
@@ -294,6 +296,21 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   useEffect(() => {
     return () => setExcalidrawApi(null);
   }, []);
+
+  const editorReady = excalidrawApi !== null && (loadError === null || loadError.fileId !== fileId);
+
+  useEffect(() => {
+    useStore.getState().setEditorMounted(editorReady);
+    if (!editorReady) useStore.getState().setEditorPaletteOpen(false);
+  }, [editorReady]);
+
+  useEffect(
+    () => () => {
+      useStore.getState().setEditorMounted(false);
+      useStore.getState().setEditorPaletteOpen(false);
+    },
+    [],
+  );
 
   useLayoutEffect(() => {
     if (excalidrawApi) return undefined;
@@ -553,7 +570,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         }
       })();
     },
-    { enabled: !settingsDialogOpen && !paletteOpen && !searchOpen },
+    { enabled: !settingsDialogOpen && !paletteOpen && !editorPaletteOpen && !searchOpen },
   );
 
   const handleCreate = useCallback(() => {
@@ -583,6 +600,8 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
 
   const handleChange = useCallback(
     (elements: readonly OrderedExcalidrawElement[], appState: AppState, files: BinaryFiles) => {
+      useStore.getState().setEditorPaletteOpen(appState.openDialog?.name === "commandPalette");
+
       if (sceneLoadingRef.current) return;
 
       if (fileId !== null) {
@@ -679,10 +698,12 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
           excalidrawAPI={handleExcalidrawApi}
           initialData={null}
           onChange={handleChange}
+          aiEnabled={false}
           UIOptions={{
             canvasActions: {
               loadScene: false,
               saveToActiveFile: false,
+              toggleTheme: false,
             },
           }}
         >
@@ -740,6 +761,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
               )}
             </WelcomeShared>
           )}
+          {editorReady && <EditorCommandPalette />}
         </Excalidraw>
       </ErrorBoundary>
       {loadError && fileId !== null && loadError.fileId === fileId && (

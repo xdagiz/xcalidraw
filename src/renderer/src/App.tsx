@@ -40,8 +40,10 @@ const App = () => {
   const editorGeneration = useStore((s) => s.editorGeneration);
   const settingsDialogOpen = useStore((s) => s.settingsDialogOpen);
   const setSettingsDialogOpen = useStore((s) => s.setSettingsDialogOpen);
+  const editorMounted = useStore((s) => s.editorMounted);
   const paletteOpen = useStore((s) => s.paletteOpen);
   const setPaletteOpen = useStore((s) => s.setPaletteOpen);
+  const editorPaletteOpen = useStore((s) => s.editorPaletteOpen);
   const searchOpen = useStore((s) => s.searchOpen);
   const setSearchOpen = useStore((s) => s.setSearchOpen);
   const applyUpdateStatus = useUpdatesStore((s) => s.applyStatus);
@@ -49,7 +51,7 @@ const App = () => {
 
   const conflictPromptRef = useRef<string | null>(null);
   const [pickingFolder, setPickingFolder] = useState(false);
-  const switcher = useSwitcher({ paletteOpen });
+  const switcher = useSwitcher({ paletteOpen, editorPaletteOpen });
 
   const folderMissing = drawings?.missing === true && entries.length === 0 && !isLoadingDrawings;
 
@@ -62,11 +64,18 @@ const App = () => {
     }
   }, []);
 
-  useHotkey("Mod+/", () => setPaletteOpen(!paletteOpen));
-  useHotkey("Mod+P", () => setSearchOpen(!searchOpen));
-  useHotkey("Mod+,", () => setSettingsDialogOpen(true), { requireReset: true });
+  useHotkey("Mod+/", () => setPaletteOpen(!paletteOpen), {
+    enabled: !editorMounted,
+  });
+  useHotkey("Mod+P", () => setSearchOpen(!searchOpen), {
+    enabled: !paletteOpen && !editorPaletteOpen,
+  });
+  useHotkey("Mod+,", () => setSettingsDialogOpen(true), {
+    enabled: !paletteOpen && !editorPaletteOpen,
+    requireReset: true,
+  });
   useHotkey("Mod+W", () => void setOpenFileId(null), {
-    enabled: !settingsDialogOpen && !paletteOpen && !searchOpen,
+    enabled: !settingsDialogOpen && !paletteOpen && !editorPaletteOpen && !searchOpen,
     requireReset: true,
   });
 
@@ -211,7 +220,7 @@ const App = () => {
           </div>
         </SidebarInset>
         <SettingsDialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen} />
-        <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+        {!editorMounted && <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />}
         <DrawingSearch open={searchOpen} onOpenChange={setSearchOpen} />
         {switcher.state.phase === "cycling" && (
           <DrawingSwitcher

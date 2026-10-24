@@ -134,7 +134,9 @@ export type State = {
   editorGeneration: number;
   settings: AppSettings;
   settingsDialogOpen: boolean;
+  editorMounted: boolean;
   paletteOpen: boolean;
+  editorPaletteOpen: boolean;
   searchOpen: boolean;
   loadSnapshot: (snapshot: DrawingsSnapshot) => void;
   applyEntries: (event: FilesChangedEvent) => void;
@@ -167,7 +169,9 @@ export type State = {
   setPendingCanvasAction: (pending: boolean) => void;
   setScratchUnsaved: (pending: boolean) => void;
   setSettingsDialogOpen: (open: boolean) => void;
+  setEditorMounted: (mounted: boolean) => void;
   setPaletteOpen: (open: boolean) => void;
+  setEditorPaletteOpen: (open: boolean) => void;
   setSearchOpen: (open: boolean) => void;
   reportError: (error: unknown, operation: "load" | "save" | "recover" | "settings") => void;
   reloadOpenFileFromDisk: () => void;
@@ -279,7 +283,9 @@ export const useStore = create<State>((set, get) => {
     scratchUnsaved: false,
     editorGeneration: 0,
     settingsDialogOpen: false,
+    editorMounted: false,
     paletteOpen: false,
+    editorPaletteOpen: false,
     searchOpen: false,
     settings:
       typeof window !== "undefined"
@@ -705,7 +711,14 @@ export const useStore = create<State>((set, get) => {
       }),
     reportWatcherError: (event) => set({ watcherDown: event.message }),
     setSettingsDialogOpen: (open) => set({ settingsDialogOpen: open }),
+    setEditorMounted: (mounted) =>
+      set((state) => {
+        if (state.editorMounted === mounted) return state;
+        return mounted ? { editorMounted: true, paletteOpen: false } : { editorMounted: false };
+      }),
     setPaletteOpen: (open) => set({ paletteOpen: open }),
+    setEditorPaletteOpen: (open) =>
+      set((state) => (state.editorPaletteOpen === open ? state : { editorPaletteOpen: open })),
     setSearchOpen: (open) => set({ searchOpen: open }),
     resolveChangedConflict,
     resolveMissingConflict,
