@@ -689,6 +689,11 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         title="The drawing editor stopped working"
         description="Try again. Your saved drawings are still available from the sidebar."
         resetKeys={[fileId]}
+        onError={() => {
+          setExcalidrawApi(null);
+          useStore.getState().setEditorMounted(false);
+          useStore.getState().setEditorPaletteOpen(false);
+        }}
         onReset={() => {
           sceneLoadingRef.current = true;
         }}
