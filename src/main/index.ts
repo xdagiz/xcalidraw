@@ -22,9 +22,11 @@ import {
 
 import { getDrawings, pickDrawings } from "./drawings";
 import {
+  copyEntry,
   createEntry,
   deleteEntry,
   listEntries,
+  moveEntry,
   readDrawingFile,
   renameEntry,
   writeDrawingFile,
@@ -485,6 +487,8 @@ void app.whenReady().then(async () => {
     readDrawingFile,
     writeDrawingFile: withWatchIgnore(writeDrawingFile),
     renameEntry: withWatchIgnore(renameEntry),
+    moveEntry: withWatchIgnore(moveEntry),
+    copyEntry: withWatchIgnore(copyEntry),
     createEntry: withWatchIgnore(createEntry),
     deleteEntry: withWatchIgnore(
       (id: string, mode: Parameters<typeof deleteEntry>[1], hooks: FsMutationHooks | undefined) =>

@@ -5,9 +5,14 @@ import {
   EXPANDED_FOLDERS_STORAGE_KEY,
   ancestorIdsOf,
   buildSortedChildIndex,
+  canReparent,
+  dropParentAtOffset,
   findTypeaheadMatch,
   flattenVisibleEntries,
+  nextCopyName,
+  pasteParentId,
   readExpandedFolderIds,
+  remapExpandedIds,
   sortSiblings,
   writeExpandedFolderIds,
 } from "./tree";
@@ -197,6 +202,85 @@ const memoryStorage = (initial: Record<string, string> = {}) => {
     },
   };
 };
+
+describe("pasteParentId", () => {
+  it("pastes into a focused folder, the parent of a focused file, or the root", () => {
+    expect(pasteParentId(null)).toBeNull();
+    expect(pasteParentId(entry("notes", "directory"))).toBe("notes");
+    expect(pasteParentId(entry("notes/a.excalidraw"))).toBe("notes");
+    expect(pasteParentId(entry("a.excalidraw"))).toBeNull();
+  });
+});
+
+describe("canReparent", () => {
+  const entries = [
+    entry("notes", "directory"),
+    entry("notes/nested", "directory"),
+    entry("notes/a.excalidraw"),
+    entry("other", "directory"),
+  ];
+
+  it("rejects a move into the source or one of its descendants", () => {
+    expect(canReparent("notes", "notes", entries)).toEqual({ ok: false, reason: "into-self" });
+    expect(canReparent("notes", "notes/nested", entries)).toEqual({
+      ok: false,
+      reason: "into-self",
+    });
+  });
+
+  it("treats the current parent as a no-op and allows a different folder", () => {
+    expect(canReparent("notes/a.excalidraw", "notes", entries)).toEqual({
+      ok: false,
+      reason: "same-parent",
+    });
+    expect(canReparent("notes/a.excalidraw", "other", entries)).toEqual({ ok: true });
+    expect(canReparent("notes/a.excalidraw", null, entries)).toEqual({ ok: true });
+  });
+});
+
+describe("nextCopyName", () => {
+  it("keeps the drawing extension and skips names that are taken", () => {
+    const siblings = [entry("Note.excalidraw"), entry("Note copy.excalidraw")];
+
+    expect(nextCopyName(siblings, "Note.excalidraw", "file")).toBe("Note copy 2.excalidraw");
+    expect(nextCopyName([entry("Note.excalidraw")], "Note.excalidraw", "file")).toBe(
+      "Note copy.excalidraw",
+    );
+  });
+
+  it("names folder copies without an extension", () => {
+    expect(nextCopyName([entry("Notes", "directory")], "Notes", "directory")).toBe("Notes copy");
+    expect(
+      nextCopyName(
+        [entry("Notes", "directory"), entry("Notes copy", "directory")],
+        "Notes",
+        "directory",
+      ),
+    ).toBe("Notes copy 2");
+  });
+});
+
+describe("remapExpandedIds", () => {
+  it("rewrites the moved folder and its descendants and leaves other ids alone", () => {
+    expect(remapExpandedIds(["notes", "notes/nested", "other"], "notes", "archive/notes")).toEqual(
+      new Set(["archive/notes", "archive/notes/nested", "other"]),
+    );
+  });
+});
+
+describe("dropParentAtOffset", () => {
+  const rows = [
+    { id: "notes", kind: "directory" as const, parentId: null },
+    { id: "notes/a.excalidraw", kind: "file" as const, parentId: "notes" },
+  ];
+
+  it("drops on a folder, on a file's parent, or on the root past the list", () => {
+    expect(dropParentAtOffset(rows, 0, 28)).toBe("notes");
+    expect(dropParentAtOffset(rows, 28, 28)).toBe("notes");
+    expect(dropParentAtOffset(rows, -1, 28)).toBeNull();
+    expect(dropParentAtOffset(rows, 56, 28)).toBeNull();
+  });
+});
 
 describe("expanded folder storage", () => {
   it("roundtrips expanded ids", () => {

@@ -195,6 +195,113 @@ describe("deleteEntry", () => {
   });
 });
 
+const folderEntry = (
+  id: string,
+  parentId: string | null,
+  kind: "file" | "directory" = "file",
+): FileEntry => ({
+  id,
+  name: id.split("/").pop() ?? id,
+  kind,
+  parentId,
+  modifiedAt: 100,
+  size: kind === "file" ? 10 : 0,
+  ino: "1",
+  dev: "1",
+});
+
+describe("moveEntry", () => {
+  it("returns null without moving when the unsaved-changes confirmation is cancelled", async () => {
+    const move = vi.fn();
+    Object.assign(window.api.files, { move });
+    const { session, fireFrame } = openSession("notes/a.excalidraw", { mode: "off" });
+    useStore.setState({
+      entries: [
+        folderEntry("notes", null, "directory"),
+        folderEntry("notes/a.excalidraw", "notes"),
+      ],
+      openFileId: "notes/a.excalidraw",
+    });
+    session.onChange(elements, appState, files);
+    fireFrame();
+    const state = useStore.getState();
+
+    expect(await useStore.getState().moveEntry("notes", "archive")).toBeNull();
+    expect(unsavedChanges).toHaveBeenCalledExactlyOnceWith("switch");
+    expect(move).not.toHaveBeenCalled();
+    expect(useStore.getState()).toBe(state);
+  });
+
+  it("remaps the open drawing, a dirty sibling, and recents", async () => {
+    const moved = folderEntry("archive/notes", "archive", "directory");
+    const move = vi.fn().mockResolvedValue(moved);
+    const set = vi.fn();
+    Object.assign(window.api.files, { move });
+    Object.assign(window.api, { store: { set } });
+    useStore.setState({
+      entries: [
+        folderEntry("notes", null, "directory"),
+        folderEntry("notes/a.excalidraw", "notes"),
+        folderEntry("notes/b.excalidraw", "notes"),
+      ],
+      openFileId: "notes/a.excalidraw",
+      dirtyById: { "notes/b.excalidraw": true },
+      recentFileIds: ["notes/a.excalidraw"],
+      homeReturnFileId: "notes/a.excalidraw",
+    });
+
+    const result = await useStore.getState().moveEntry("notes", "archive");
+
+    expect(result).toBe(moved);
+    expect(move).toHaveBeenCalledWith("notes", "archive");
+    expect(useStore.getState().openFileId).toBe("archive/notes/a.excalidraw");
+    expect(useStore.getState().dirtyById).toEqual({ "archive/notes/b.excalidraw": true });
+    expect(useStore.getState().recentFileIds).toEqual(["archive/notes/a.excalidraw"]);
+    expect(useStore.getState().homeReturnFileId).toBe("archive/notes/a.excalidraw");
+    expect(set).toHaveBeenCalledWith("lastOpenedFileId", "archive/notes/a.excalidraw");
+    expect(useStore.getState().entries.map((item) => item.id)).toEqual([
+      "archive/notes",
+      "archive/notes/a.excalidraw",
+      "archive/notes/b.excalidraw",
+    ]);
+  });
+});
+
+describe("copyEntry", () => {
+  it("copies the disk version of an unsaved open drawing without asking to discard it", async () => {
+    const created = [folderEntry("a copy.excalidraw", null)];
+    const copy = vi.fn().mockResolvedValue(created);
+    Object.assign(window.api.files, { copy });
+    const { session, fireFrame } = openSession(fileId, { mode: "off" });
+    session.onChange(elements, appState, files);
+    fireFrame();
+
+    expect(await useStore.getState().copyEntry(fileId, null)).toBe("a copy.excalidraw");
+    expect(unsavedChanges).not.toHaveBeenCalled();
+    expect(copy).toHaveBeenCalledWith(fileId, null);
+  });
+
+  it("inserts the copied entries without changing the open drawing", async () => {
+    const created = [folderEntry("a copy.excalidraw", null)];
+    const copy = vi.fn().mockResolvedValue(created);
+    Object.assign(window.api.files, { copy });
+    useStore.setState({
+      entries: [folderEntry(fileId, null)],
+      openFileId: fileId,
+    });
+
+    expect(await useStore.getState().copyEntry(fileId, "notes")).toBe("a copy.excalidraw");
+    expect(copy).toHaveBeenCalledWith(fileId, "notes");
+    expect(useStore.getState().openFileId).toBe(fileId);
+    expect(
+      useStore
+        .getState()
+        .entries.map((item) => item.id)
+        .toSorted(),
+    ).toEqual(["a copy.excalidraw", fileId]);
+  });
+});
+
 describe("missing-file recovery", () => {
   const prepareRecovery = (mode: AutosaveSetting = { mode: "interval", ms: 5000 }) => {
     const pending = Promise.withResolvers<FileEntry>();

@@ -9,6 +9,8 @@ describe("toAppError", () => {
     expect(toAppError(new Error("x"), "recover").title).toBe("Couldn’t recover this drawing");
     expect(toAppError(new Error("x"), "rename").title).toBe("Couldn’t rename this drawing");
     expect(toAppError(new Error("x"), "delete").title).toBe("Couldn’t delete this drawing");
+    expect(toAppError(new Error("x"), "move").title).toBe("Couldn’t move this item");
+    expect(toAppError(new Error("x"), "copy").title).toBe("Couldn’t copy this item");
     expect(toAppError(new Error("x"), "settings").title).toBe("Couldn’t update settings");
     expect(toAppError(new Error("x"), "unexpected").title).toBe("Something went wrong");
   });
@@ -202,6 +204,7 @@ describe("toAppError", () => {
     expect(detailFor({ code: "NOT_FOUND", reason: "missing-root" })).toContain("drawings folder");
     expect(detailFor({ code: "TOO_LARGE", reason: "thumbnail-too-large" })).toContain("thumbnail");
     expect(detailFor({ code: "INVALID", reason: "directory-not-empty" })).toContain("not empty");
+    expect(detailFor({ code: "INVALID", reason: "into-self" })).toContain("into itself");
     expect(detailFor({ code: "UNKNOWN", reason: "watcher-failed" })).toContain("disk");
     expect(detailFor({ code: "UNKNOWN", reason: "disk-full" })).toContain("disk is full");
     expect(detailFor({ code: "CANCELLED", reason: "suppressed" })).toContain("cancelled");
