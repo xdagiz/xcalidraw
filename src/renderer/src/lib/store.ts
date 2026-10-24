@@ -567,7 +567,6 @@ export const useStore = create<State>((set, get) => {
     },
 
     copyEntry: async (id, parentId) => {
-      if (!(await confirmSubtreeChange(id))) return null;
       const created = await window.api.files.copy(id, parentId);
       const root = created[0];
       if (!root) return null;

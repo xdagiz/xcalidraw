@@ -319,15 +319,17 @@ describe("moveEntry", () => {
 });
 
 describe("copyEntry", () => {
-  it("returns null without copying when the unsaved-changes confirmation is cancelled", async () => {
-    const copy = vi.fn();
+  it("copies the disk version of an unsaved open drawing without asking to discard it", async () => {
+    const created = [folderEntry("a copy.excalidraw", null)];
+    const copy = vi.fn().mockResolvedValue(created);
     Object.assign(window.api.files, { copy });
     const { session, fireFrame } = openSession(fileId, { mode: "off" });
     session.onChange(elements, appState, files);
     fireFrame();
 
-    expect(await useStore.getState().copyEntry(fileId, null)).toBeNull();
-    expect(copy).not.toHaveBeenCalled();
+    expect(await useStore.getState().copyEntry(fileId, null)).toBe("a copy.excalidraw");
+    expect(unsavedChanges).not.toHaveBeenCalled();
+    expect(copy).toHaveBeenCalledWith(fileId, null);
   });
 
   it("inserts the copied entries without changing the open drawing", async () => {
