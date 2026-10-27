@@ -30,10 +30,12 @@
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "chokidar": "^5.0.0",
     "electron-log": "^5.4.4",
     "electron-store": "^11.0.2",
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.9",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@base-ui/react": "^1.8.0",
