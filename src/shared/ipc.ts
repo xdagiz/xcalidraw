@@ -147,6 +147,7 @@ export type StoreType = {
   reopenLastDrawing?: boolean;
   showRecents?: boolean;
   autoDownloadUpdates?: boolean;
+  mcpServer?: boolean;
 };
 
 export type FilesChangedEvent = {
@@ -229,6 +230,7 @@ export type AppSettings = {
   reopenLastDrawing: boolean;
   showRecents: boolean;
   autoDownloadUpdates: boolean;
+  mcpServer: boolean;
 };
 
 export type SettingsUpdate = Partial<AppSettings>;
@@ -239,6 +241,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   reopenLastDrawing: true,
   showRecents: true,
   autoDownloadUpdates: false,
+  mcpServer: false,
 };
 
 export type ThumbnailRecord = {
@@ -291,3 +294,5 @@ export type McpRequest = {
 };
 
 export type McpResponse = { id: string; result: unknown } | { id: string; error: string };
+
+export const MCP_PORT = 29180;

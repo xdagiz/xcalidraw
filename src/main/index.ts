@@ -38,7 +38,7 @@ import {
   registerIpcHandlers,
 } from "./ipc";
 import { initLogger, log } from "./logger";
-import { startMcpServer } from "./mcp";
+import { applyMcpSetting } from "./mcp";
 import { applyTheme, getSettings, setSettings, applyWindowBgColor } from "./settings";
 import { getLastOpenedFileId, getRecentFileIds } from "./store";
 import { pruneThumbnailCache, readThumbnailRecords, writeThumbnailRecord } from "./thumbnails";
@@ -502,6 +502,7 @@ void app.whenReady().then(async () => {
     updateSettings: (update) => {
       const settings = setSettings(update);
       applyUpdatePreferences();
+      applyMcpSetting(settings.mcpServer);
       return settings;
     },
     getThumbnails: readThumbnailRecords,
@@ -550,7 +551,7 @@ void app.whenReady().then(async () => {
   }
 
   void runUpdateCheck({ alertOnFail: false, trigger: "boot" });
-  startMcpServer();
+  applyMcpSetting(getSettings().mcpServer);
 
   app.on("second-instance", () => {
     void surfacePrimaryUi().catch((error) => log.error("[ui] surface failed", error));

@@ -1,6 +1,7 @@
+import { MCP_PORT } from "@shared/ipc";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { MCP_PORT, isAllowedRequest } from "./mcp";
+import { isAllowedRequest } from "./mcp";
 
 vi.mock("electron", () => ({ app: {}, ipcMain: { on: () => undefined } }));
 vi.mock("./files", () => ({}));

@@ -1,5 +1,6 @@
 import type { AutosaveSetting, ThemePreference } from "@shared/ipc";
 import { autosaveKey, parseAutosaveKey } from "@shared/ipc";
+import { MCP_PORT } from "@shared/ipc";
 import { CheckIcon, Folder, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -179,6 +180,14 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
     }
   };
 
+  const handleMcpServerChange = async (value: boolean) => {
+    try {
+      await updateSettings({ mcpServer: value });
+    } catch (error) {
+      toast.add({ title: toAppError(error, "settings").detail, type: "error" });
+    }
+  };
+
   const handleChangeFolder = async () => {
     setPickingFolder(true);
     try {
@@ -307,6 +316,23 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
               id="auto-download-updates"
               checked={settings.autoDownloadUpdates}
               onCheckedChange={(value) => void handleAutoDownloadChange(value)}
+            />
+          </Field>
+        </div>
+
+        <div className="pt-6">
+          <p className="text-muted-foreground text-xs font-medium">Agents</p>
+          <Field orientation="horizontal" className="mt-3">
+            <FieldContent>
+              <FieldLabel htmlFor="mcp-server">Let AI agents edit drawings</FieldLabel>
+              <FieldDescription className="font-mono text-xs break-all">
+                http://127.0.0.1:{MCP_PORT}/mcp
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="mcp-server"
+              checked={settings.mcpServer}
+              onCheckedChange={(value) => void handleMcpServerChange(value)}
             />
           </Field>
         </div>

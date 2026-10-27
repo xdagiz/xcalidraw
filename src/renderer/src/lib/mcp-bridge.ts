@@ -29,6 +29,29 @@ const EXTENSION = ".excalidraw";
 
 const round = (n: number) => Math.round(n);
 
+const bindingId = (end: unknown) =>
+  isRecord(end) && typeof end.id === "string" ? end.id : undefined;
+
+// A label-free copy of a shape so the converter can bind new arrows to it.
+const standInFor = (shape: ExcalidrawElement): ExcalidrawElementSkeleton =>
+  shape.type === "rectangle" || shape.type === "ellipse" || shape.type === "diamond"
+    ? {
+        id: shape.id,
+        type: shape.type,
+        x: shape.x,
+        y: shape.y,
+        width: shape.width,
+        height: shape.height,
+      }
+    : {
+        id: shape.id,
+        type: "rectangle",
+        x: shape.x,
+        y: shape.y,
+        width: shape.width,
+        height: shape.height,
+      };
+
 const isSkeleton = (value: unknown): value is ExcalidrawElementSkeleton =>
   isRecord(value) && typeof value.type === "string";
 
@@ -146,16 +169,52 @@ export const createMcpHandler = (deps: McpHandlerDeps) => {
         throw new Error("elements must be a list of element skeletons with a type.");
       }
       const { canvas } = await openCanvas();
-      const { CaptureUpdateAction, convertToExcalidrawElements } = await loadExcalidraw();
+      const { CaptureUpdateAction, convertToExcalidrawElements, newElementWith } =
+        await loadExcalidraw();
       const scene = canvas.api.getSceneElementsIncludingDeleted();
       const taken = new Set(scene.map((element) => element.id));
       const clash = elements.find((skeleton) => skeleton.id && taken.has(skeleton.id));
       if (clash) throw new Error(`Element id ${clash.id} already exists. Use update_elements.`);
 
+      // Arrows may point at shapes already on the canvas: convert them alongside stand-ins
+      // for those shapes, then copy the new bindings back onto the real ones.
+      const live = new Map(scene.filter((e) => !e.isDeleted).map((e) => [e.id, e]));
+      const referenced = new Set(
+        elements
+          .flatMap((skeleton) =>
+            "start" in skeleton || "end" in skeleton
+              ? [bindingId(Reflect.get(skeleton, "start")), bindingId(Reflect.get(skeleton, "end"))]
+              : [],
+          )
+          .filter((id): id is string => id !== undefined && live.has(id)),
+      );
+      const standIns = [...referenced].flatMap((id) => {
+        const shape = live.get(id);
+        return shape ? [standInFor(shape)] : [];
+      });
       // Keep agent ids so later calls can reference what it drew.
-      const added = convertToExcalidrawElements(elements, { regenerateIds: false });
+      const converted = convertToExcalidrawElements([...standIns, ...elements], {
+        regenerateIds: false,
+      });
+      const added = converted.filter((element) => !referenced.has(element.id));
+      const rebound = new Map(
+        converted
+          .filter((element) => referenced.has(element.id))
+          .map((element) => [element.id, element.boundElements ?? []]),
+      );
+      const merged = scene.map((element) => {
+        const bindings = rebound.get(element.id);
+        if (!bindings) return element;
+        const known = new Set((element.boundElements ?? []).map((bound) => bound.id));
+        return newElementWith(element, {
+          boundElements: [
+            ...(element.boundElements ?? []),
+            ...bindings.filter((bound) => !known.has(bound.id)),
+          ],
+        });
+      });
       canvas.api.updateScene({
-        elements: [...scene, ...added],
+        elements: [...merged, ...added],
         captureUpdate: CaptureUpdateAction.IMMEDIATELY,
       });
       canvas.api.scrollToContent(added, { fitToViewport: true, animate: true });
@@ -179,17 +238,40 @@ export const createMcpHandler = (deps: McpHandlerDeps) => {
       }
 
       const { canvas } = await openCanvas();
-      const { CaptureUpdateAction, newElementWith } = await loadExcalidraw();
+      const { CaptureUpdateAction, convertToExcalidrawElements, newElementWith } =
+        await loadExcalidraw();
       const scene = canvas.api.getSceneElementsIncludingDeleted();
       const missing = [...updates.keys()].filter(
         (id) => !scene.some((element) => element.id === id && !element.isDeleted),
       );
       if (missing.length > 0) throw new Error(`Unknown element ids: ${missing.join(", ")}`);
 
-      // ponytail: text edits don't re-measure; resize the element or delete + add for long text.
+      const byId = new Map(scene.map((element) => [element.id, element]));
       const next = scene.map((element) => {
         const changes = updates.get(element.id);
-        return changes ? newElementWith(element, changes) : element;
+        if (!changes) return element;
+        const updated = newElementWith(element, changes);
+        if (updated.type !== "text") return updated;
+        // Text size comes from the converter, which measures it like the editor does.
+        const [measured] = convertToExcalidrawElements([
+          {
+            type: "text",
+            x: 0,
+            y: 0,
+            text: updated.originalText,
+            fontSize: updated.fontSize,
+            fontFamily: updated.fontFamily,
+          },
+        ]);
+        const container = updated.containerId ? byId.get(updated.containerId) : undefined;
+        return newElementWith(updated, {
+          width: measured.width,
+          height: measured.height,
+          ...(container && {
+            x: container.x + (container.width - measured.width) / 2,
+            y: container.y + (container.height - measured.height) / 2,
+          }),
+        });
       });
       canvas.api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
       return { updated: summarizeElements(next.filter((element) => updates.has(element.id))) };

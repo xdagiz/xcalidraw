@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { MCP_REQUEST, MCP_RESPONSE } from "@shared/channels";
-import type { McpResponse } from "@shared/ipc";
+import { MCP_PORT, type McpResponse } from "@shared/ipc";
 import { app, ipcMain } from "electron";
 import { z } from "zod";
 
@@ -12,12 +12,11 @@ import { listEntries, readDrawingFile } from "./files";
 import { log } from "./logger";
 import { getMainWindow } from "./window";
 
-export const MCP_PORT = 29180;
 const EDITOR_TIMEOUT_MS = 15_000;
 
-// Only local agents: browsers always send Origin, and a foreign Host means DNS rebinding.
-export const isAllowedRequest = (host: string | undefined, origin: string | undefined) =>
-  origin === undefined && (host === `127.0.0.1:${MCP_PORT}` || host === `localhost:${MCP_PORT}`);
+// Only allow local connections (prevents DNS rebinding). CLI clients may send Origin.
+export const isAllowedRequest = (host: string | undefined, _origin: string | undefined) =>
+  host === `127.0.0.1:${MCP_PORT}` || host === `localhost:${MCP_PORT}`;
 
 type Pending = { senderId: number; settle: (response: McpResponse) => void };
 const pending = new Map<string, Pending>();
@@ -75,8 +74,7 @@ Give every element an "id" you choose so you can update, delete or connect it la
 - Text: {"id":"title","type":"text","x":0,"y":-60,"text":"Auth flow","fontSize":28}
 - Arrows: {"id":"a1","type":"arrow","x":180,"y":40,"width":120,"height":0,
   "start":{"id":"api"},"end":{"id":"db"},"label":{"text":"query"}}
-  start/end must name shapes added in the same add_elements call.
-  To connect to existing shapes, add the arrow together with new shapes or point x/y/width/height at them.
+  start/end can name shapes in the same call or shapes already in the drawing.
 - Lines: {"type":"line","x":0,"y":0,"points":[[0,0],[200,0]]}
 
 ## Style
@@ -216,3 +214,10 @@ export const startMcpServer = () => {
   });
   http.listen(MCP_PORT, "127.0.0.1", () => log.info(`[mcp] listening on 127.0.0.1:${MCP_PORT}`));
 };
+
+export const stopMcpServer = () => {
+  http?.close();
+  http = null;
+};
+
+export const applyMcpSetting = (enabled: boolean) => (enabled ? startMcpServer() : stopMcpServer());

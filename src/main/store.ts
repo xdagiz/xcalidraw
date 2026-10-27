@@ -58,6 +58,10 @@ const schema = {
     type: "boolean",
     default: false,
   },
+  mcpServer: {
+    type: "boolean",
+    default: false,
+  },
 };
 
 const createStore = (): Store<StoreType> => {

@@ -67,6 +67,7 @@ export const validateSettingsUpdate = (payload: Record<string, unknown>): Settin
         update[key] = value;
         break;
       case "autoDownloadUpdates":
+      case "mcpServer":
         if (typeof value !== "boolean") {
           throw codedError(`${key} must be a boolean`, {
             code: "INVALID",
@@ -93,6 +94,7 @@ export const getSettings = (): AppSettings => ({
   reopenLastDrawing: store.get("reopenLastDrawing") ?? DEFAULT_SETTINGS.reopenLastDrawing,
   showRecents: store.get("showRecents") ?? DEFAULT_SETTINGS.showRecents,
   autoDownloadUpdates: store.get("autoDownloadUpdates") ?? DEFAULT_SETTINGS.autoDownloadUpdates,
+  mcpServer: store.get("mcpServer") ?? DEFAULT_SETTINGS.mcpServer,
 });
 
 export const windowBgColor = () => (nativeTheme.shouldUseDarkColors ? "#181818" : "#ffffff");
@@ -140,6 +142,11 @@ export const setSettings = (update: SettingsUpdate): AppSettings => {
   if (clean.autoDownloadUpdates !== undefined) {
     next.autoDownloadUpdates = clean.autoDownloadUpdates;
     store.set("autoDownloadUpdates", clean.autoDownloadUpdates);
+  }
+
+  if (clean.mcpServer !== undefined) {
+    next.mcpServer = clean.mcpServer;
+    store.set("mcpServer", clean.mcpServer);
   }
 
   if (themeChanged) applyTheme();
