@@ -283,3 +283,11 @@ export const validateDrawingRecord = (record: unknown): void => {
 export type LibraryReturnedEvent = {
   hash: string;
 };
+
+export type McpRequest = {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+};
+
+export type McpResponse = { id: string; result: unknown } | { id: string; error: string };

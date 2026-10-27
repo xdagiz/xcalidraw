@@ -13,6 +13,7 @@ import {
   createBeforeUnloadGuard,
   setCloseHandshakeActive,
 } from "./lib/close-handshake";
+import { createMcpHandler, getMcpCanvas } from "./lib/mcp-bridge";
 import { reportFatalToMain, reportRendererError } from "./lib/report-error";
 import { sessionOwner } from "./lib/session-owner";
 import { useStore } from "./lib/store";
@@ -58,6 +59,16 @@ window.api.window.onCloseCancelled(() => {
   setCloseHandshakeActive(false);
   sessionOwner.getSession()?.setAutosavePaused(false);
 });
+
+window.api.mcp.onRequest(
+  createMcpHandler({
+    getCanvas: getMcpCanvas,
+    getOpenFileId: () => useStore.getState().openFileId,
+    getEntries: () => useStore.getState().entries,
+    openFile: (id) => useStore.getState().setOpenFileId(id),
+    createFile: (name) => useStore.getState().createAndOpenEntry(null, "file", name),
+  }),
+);
 
 window.api.window.ready();
 

@@ -2,9 +2,10 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import { MCP_PORT, isAllowedRequest } from "./mcp";
 
-vi.mock("electron", () => ({ app: {} }));
+vi.mock("electron", () => ({ app: {}, ipcMain: { on: () => undefined } }));
 vi.mock("./files", () => ({}));
 vi.mock("./logger", () => ({ log: {} }));
+vi.mock("./window", () => ({}));
 
 describe("isAllowedRequest", () => {
   it("allows local agents", () => {

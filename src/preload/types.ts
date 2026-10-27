@@ -71,6 +71,11 @@ export interface NativeApi {
   library: {
     onReturned: (cb: (event: LibraryReturnedEvent) => void) => () => void;
   };
+  mcp: {
+    onRequest: (
+      handler: (name: string, args: Record<string, unknown>) => Promise<unknown>,
+    ) => () => void;
+  };
   contextMenu: {
     show: (items: ContextMenuItem[], x: number, y: number) => Promise<string | null>;
   };

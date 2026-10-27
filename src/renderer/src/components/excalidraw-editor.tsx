@@ -50,6 +50,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { libraryErrorToastId, saveErrorToastId, toAppError, type AppError } from "@/lib/app-error";
 import { createDrawingSession, drawingSignature } from "@/lib/drawing-session";
 import { createLibraryPersistenceAdapter, defaultLibraryStorage } from "@/lib/library-persistence";
+import { setMcpCanvas } from "@/lib/mcp-bridge";
 import { createSceneSwitchController } from "@/lib/scene-switching";
 import { createScratchController } from "@/lib/scratch-session";
 import { sessionOwner } from "@/lib/session-owner";
@@ -296,6 +297,16 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   useEffect(() => {
     return () => setExcalidrawApi(null);
   }, []);
+
+  useEffect(() => {
+    if (!excalidrawApi) return undefined;
+    setMcpCanvas({
+      api: excalidrawApi,
+      fileId,
+      isReady: () => !sceneLoadingRef.current && !excalidrawApi.getAppState().isLoading,
+    });
+    return () => setMcpCanvas(null);
+  }, [excalidrawApi, fileId]);
 
   const editorReady = excalidrawApi !== null && (loadError === null || loadError.fileId !== fileId);
 

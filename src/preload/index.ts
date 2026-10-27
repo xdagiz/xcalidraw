@@ -16,6 +16,8 @@ import {
   FILES_WRITE,
   FILES_WRITE_RECOVER,
   LIBRARY_RETURNED,
+  MCP_REQUEST,
+  MCP_RESPONSE,
   SETTINGS_GET,
   SETTINGS_SET,
   STORE_DELETE,
@@ -44,6 +46,7 @@ import type { ChannelMap, ChannelName } from "@shared/ipc";
 import type {
   FilesChangedEvent,
   LibraryReturnedEvent,
+  McpRequest,
   UpdateStatus,
   WatcherErrorEvent,
   WindowCloseRequest,
@@ -150,6 +153,25 @@ const api: NativeApi = {
         cb(payload);
       ipcRenderer.on(LIBRARY_RETURNED, listener);
       return () => ipcRenderer.removeListener(LIBRARY_RETURNED, listener);
+    },
+  },
+  mcp: {
+    onRequest: (handler) => {
+      const listener = async (
+        _event: Electron.IpcRendererEvent,
+        { id, name, args }: McpRequest,
+      ) => {
+        try {
+          ipcRenderer.send(MCP_RESPONSE, { id, result: await handler(name, args) });
+        } catch (error) {
+          ipcRenderer.send(MCP_RESPONSE, {
+            id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      };
+      ipcRenderer.on(MCP_REQUEST, listener);
+      return () => ipcRenderer.removeListener(MCP_REQUEST, listener);
     },
   },
   contextMenu: {

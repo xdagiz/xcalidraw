@@ -36,3 +36,5 @@ export const UPDATES_DOWNLOAD = "updates:download";
 export const UPDATES_INSTALL = "updates:install";
 export const UPDATES_STATUS = "updates:status";
 export const UPDATES_STATUS_GET = "updates:status:get";
+export const MCP_REQUEST = "mcp:request";
+export const MCP_RESPONSE = "mcp:response";
