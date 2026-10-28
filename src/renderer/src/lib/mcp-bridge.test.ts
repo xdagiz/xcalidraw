@@ -2,7 +2,7 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { FileEntry } from "@shared/ipc";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { createMcpHandler, type McpCanvas, type McpHandlerDeps } from "./mcp-bridge";
+import { createMcpHandler, withFreshIds, type McpCanvas, type McpHandlerDeps } from "./mcp-bridge";
 
 vi.mock("@excalidraw/excalidraw", () => ({}));
 
@@ -93,5 +93,37 @@ describe("createMcpHandler", () => {
     const pending = handle("delete_elements", { ids: ["x"] });
     openFileId = "/d/b.excalidraw";
     await expect(pending).rejects.toThrow("changed");
+  });
+});
+
+describe("withFreshIds", () => {
+  it("gives every element a new id and keeps their links pointing at each other", () => {
+    let n = 0;
+    const copy = withFreshIds(
+      [
+        {
+          id: "box",
+          type: "rectangle",
+          groupIds: ["g"],
+          boundElements: [{ id: "label", type: "text" }],
+        },
+        { id: "label", type: "text", containerId: "box", groupIds: ["g"] },
+        {
+          id: "arrow",
+          type: "arrow",
+          startBinding: { elementId: "box" },
+          endBinding: { elementId: "gone" },
+        },
+      ],
+      () => `n${n++}`,
+    );
+    const [box, label, arrow] = copy;
+    expect(new Set(copy.map((element) => element.id)).has("box")).toBe(false);
+    expect(label.containerId).toBe(box.id);
+    expect(box.boundElements).toEqual([{ id: label.id, type: "text" }]);
+    expect(arrow.startBinding).toEqual({ elementId: box.id });
+    expect(arrow.endBinding).toBeNull();
+    expect(box.groupIds).toEqual(label.groupIds);
+    expect(arrow.groupIds).toHaveLength(1);
   });
 });

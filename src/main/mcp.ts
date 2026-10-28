@@ -10,6 +10,14 @@ import { app, ipcMain } from "electron";
 import { z } from "zod";
 
 import { listEntries, readDrawingFile } from "./files";
+import {
+  MAX_ITEM_ELEMENTS,
+  MY_LIBRARY_ID,
+  getLibraryIndex,
+  getLibraryItems,
+  searchIndex,
+  summarizeItem,
+} from "./library";
 import { log } from "./logger";
 import { getMainWindow } from "./window";
 
@@ -77,6 +85,10 @@ Give every element an "id" you choose so you can update, delete or connect it la
   "start":{"id":"api"},"end":{"id":"db"},"label":{"text":"query"}}
   start/end can name shapes in the same call or shapes already in the drawing.
 - Lines: {"type":"line","x":0,"y":0,"points":[[0,0],[200,0]]}
+
+## Libraries (icons, logos, architecture and diagram kits)
+search_libraries -> get_library -> insert_library_item. Library id "${MY_LIBRARY_ID}" is the user's own library.
+Inserted items arrive grouped, with new ids; insert_library_item returns them so you can connect arrows.
 
 ## Style
 Optional on any element: strokeColor, backgroundColor, fillStyle ("solid" | "hachure"),
@@ -179,6 +191,57 @@ const buildServer = () => {
       inputSchema: { ids: z.array(z.string()).min(1).max(500) },
     },
     async (args) => text(await askEditor("delete_elements", args)),
+  );
+
+  server.registerTool(
+    "search_libraries",
+    {
+      description:
+        "Search the public Excalidraw libraries (icons, logos, cloud, system design kits...).",
+      inputSchema: { query: z.string().max(200) },
+    },
+    async ({ query }) =>
+      text(
+        searchIndex(await getLibraryIndex(), query).map(({ id, name, description }) => ({
+          id,
+          name,
+          description,
+        })),
+      ),
+  );
+
+  server.registerTool(
+    "get_library",
+    {
+      description: `List the items in a library. Use id "${MY_LIBRARY_ID}" for the user's own library.`,
+      inputSchema: { id: z.string().max(200) },
+    },
+    async ({ id }) => {
+      const { name, items } = await getLibraryItems(id);
+      return text({ id, name, items: items.map(summarizeItem) });
+    },
+  );
+
+  server.registerTool(
+    "insert_library_item",
+    {
+      description:
+        "Place a library item on the open drawing. x/y is its top-left; omit to place it beside the drawing.",
+      inputSchema: {
+        library: z.string().max(200),
+        item: z.number().int().min(0),
+        x: z.number().finite().optional(),
+        y: z.number().finite().optional(),
+      },
+    },
+    async ({ library, item, x, y }) => {
+      const { items } = await getLibraryItems(library);
+      const picked = items[item];
+      if (!picked)
+        throw new Error(`That library has ${items.length} items (0-${items.length - 1}).`);
+      if (picked.elements.length > MAX_ITEM_ELEMENTS) throw new Error("That item is too large.");
+      return text(await askEditor("insert_elements", { elements: picked.elements, x, y }));
+    },
   );
 
   return server;

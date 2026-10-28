@@ -7,6 +7,7 @@ vi.mock("electron", () => ({ app: {}, ipcMain: { on: () => undefined } }));
 vi.mock("./files", () => ({}));
 vi.mock("./logger", () => ({ log: {} }));
 vi.mock("./window", () => ({}));
+vi.mock("./library", () => ({ MY_LIBRARY_ID: "mine" }));
 
 describe("isAllowedRequest", () => {
   it("allows local agents, whatever Origin their client sends", () => {

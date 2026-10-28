@@ -99,6 +99,63 @@ const isElementUpdate = (
   value: Record<string, unknown>,
 ): value is ElementUpdate<OrderedExcalidrawElement> => updateFieldError(value) === null;
 
+export const newId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 20);
+
+const remapRef = (value: unknown, ids: Map<string, string>) =>
+  typeof value === "string" ? (ids.get(value) ?? null) : null;
+
+const remapBinding = (binding: unknown, ids: Map<string, string>) => {
+  if (!isRecord(binding)) return null;
+  const elementId = remapRef(binding.elementId, ids);
+  return elementId ? Object.assign({}, binding, { elementId }) : null;
+};
+
+// Library items reuse the same ids everywhere, so every insert gets a fresh copy whose
+// internal links (labels, arrow bindings, groups) point at the new ids. All of it is
+// grouped so the item moves as one piece.
+export const withFreshIds = (elements: readonly Record<string, unknown>[], makeId = newId) => {
+  const ids = new Map<string, string>();
+  for (const element of elements) {
+    if (typeof element.id === "string") ids.set(element.id, makeId());
+  }
+  const groups = new Map<string, string>();
+  const itemGroup = makeId();
+  const groupOf = (group: string) => {
+    const existing = groups.get(group);
+    if (existing) return existing;
+    const created = makeId();
+    groups.set(group, created);
+    return created;
+  };
+
+  return elements.map((element) => {
+    const groupIds = Array.isArray(element.groupIds)
+      ? element.groupIds.filter((group): group is string => typeof group === "string")
+      : [];
+    const boundElements = Array.isArray(element.boundElements)
+      ? element.boundElements.flatMap((bound) => {
+          const id = isRecord(bound) ? remapRef(bound.id, ids) : null;
+          return isRecord(bound) && id ? [Object.assign({}, bound, { id })] : [];
+        })
+      : [];
+    return Object.assign({}, element, {
+      id: typeof element.id === "string" ? ids.get(element.id) : makeId(),
+      groupIds: [...groupIds.map(groupOf), itemGroup],
+      containerId: remapRef(element.containerId, ids),
+      boundElements: boundElements.length > 0 ? boundElements : null,
+      startBinding: remapBinding(element.startBinding, ids),
+      endBinding: remapBinding(element.endBinding, ids),
+      frameId: null,
+      index: null,
+    });
+  });
+};
+
+const isRawElement = (value: unknown): value is ExcalidrawElement =>
+  isRecord(value) && typeof value.id === "string" && typeof value.type === "string";
+
+const GAP = 80;
+
 // Loaded on demand so the app shell doesn't pull the editor bundle in at startup.
 const loadExcalidraw = () => import("@excalidraw/excalidraw");
 
@@ -341,6 +398,47 @@ export const createMcpHandler = (deps: McpHandlerDeps) => {
       );
       canvas.api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
       return { deleted: [...doomed] };
+    },
+
+    insert_elements: async ({ elements, x, y }) => {
+      if (!Array.isArray(elements) || !elements.every(isRecord)) {
+        throw new Error("That library item has no elements.");
+      }
+      const {
+        CaptureUpdateAction,
+        getCommonBounds,
+        newElementWith,
+        restoreElements,
+        fileId,
+        canvas,
+      } = await editableCanvas();
+      const fresh = restoreElements(
+        withFreshIds(elements).flatMap((element) => (isRawElement(element) ? [element] : [])),
+        null,
+        {
+          repairBindings: true,
+        },
+      ).filter((element) => !element.isDeleted);
+      if (fresh.length === 0) throw new Error("That library item has no elements.");
+
+      assertStillOpen(fileId, canvas);
+      const scene = canvas.api.getSceneElementsIncludingDeleted();
+      const [minX, minY] = getCommonBounds(fresh);
+      // Default spot: just right of everything already drawn.
+      const live = scene.filter((element) => !element.isDeleted);
+      const [, sceneMinY, sceneMaxX] = live.length > 0 ? getCommonBounds(live) : [0, 0, -GAP, 0];
+      const targetX = typeof x === "number" ? x : sceneMaxX + GAP;
+      const targetY = typeof y === "number" ? y : sceneMinY;
+      const placed = fresh.map((element) =>
+        newElementWith(element, { x: element.x - minX + targetX, y: element.y - minY + targetY }),
+      );
+
+      canvas.api.updateScene({
+        elements: [...scene, ...placed],
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      canvas.api.scrollToContent(placed, { fitToViewport: true, animate: true });
+      return { inserted: summarizeElements(placed) };
     },
 
     create_drawing: async ({ name }) => {
