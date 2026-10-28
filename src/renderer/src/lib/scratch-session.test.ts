@@ -143,6 +143,22 @@ describe("scratch controller", () => {
     expect(h.calls.deleted).toEqual([]);
   });
 
+  it("retargets a bound session without invalidating its canvas state", () => {
+    const h = harness();
+    h.controller.bindFile("old.excalidraw");
+    const session = h.controller.getSession();
+
+    expect(h.controller.retargetFile("old.excalidraw", "new.excalidraw")).toBe(true);
+    expect(h.controller.getState()).toEqual({
+      phase: "bound",
+      fileId: "new.excalidraw",
+      session,
+    });
+    expect(h.controller.getSession()).toBe(session);
+    expect(h.calls.released).toEqual([]);
+    expect(h.calls.deleted).toEqual([]);
+  });
+
   it("runs the happy path to a bound session", async () => {
     const h = harness();
 

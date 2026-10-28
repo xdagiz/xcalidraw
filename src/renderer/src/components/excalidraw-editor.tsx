@@ -514,6 +514,19 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   );
 
   useLayoutEffect(() => {
+    const bound = scratch.getState();
+    if (
+      fileId !== null &&
+      bound.phase === "bound" &&
+      bound.fileId !== fileId &&
+      bound.session === sessionOwner.getSession(fileId) &&
+      scratch.retargetFile(bound.fileId, fileId)
+    ) {
+      loadedGenerationRef.current = editorGeneration;
+      loadedFileIdRef.current = fileId;
+      return;
+    }
+
     const generationChanged = loadedGenerationRef.current !== editorGeneration;
     loadedGenerationRef.current = editorGeneration;
     const fileChanged = loadedFileIdRef.current !== fileId;

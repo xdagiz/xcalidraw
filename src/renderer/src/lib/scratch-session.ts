@@ -46,6 +46,7 @@ export type ScratchController = {
   ) => void;
   start: () => void;
   bindFile: (fileId: string) => void;
+  retargetFile: (fromFileId: string, toFileId: string) => boolean;
   invalidate: () => void;
 };
 
@@ -226,6 +227,12 @@ export const createScratchController = (deps: ScratchDeps): ScratchController =>
       abortCurrent();
       const session = deps.acquireSession(fileId, null);
       state = { phase: "bound", fileId, session };
+    },
+    retargetFile: (fromFileId, toFileId) => {
+      if (state.phase !== "bound" || state.fileId !== fromFileId) return false;
+      state = { phase: "bound", fileId: toFileId, session: state.session };
+      if (canvasSeededFileId === fromFileId) canvasSeededFileId = toFileId;
+      return true;
     },
     invalidate: () => {
       epoch += 1;

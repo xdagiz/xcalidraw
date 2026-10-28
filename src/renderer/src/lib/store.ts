@@ -569,7 +569,6 @@ export const useStore = create<State>((set, get) => {
 
     moveEntry: async (id, parentId) => {
       const rootPath = get().drawings?.path ?? null;
-      if (!(await confirmSubtreeChange(id))) return null;
       const entry = await window.api.files.move(id, parentId);
       if ((get().drawings?.path ?? null) !== rootPath) return null;
       return commitSubtreeRemap(id, entry, rootPath);

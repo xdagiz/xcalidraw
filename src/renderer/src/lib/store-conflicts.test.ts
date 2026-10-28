@@ -266,8 +266,8 @@ const folderEntry = (
 });
 
 describe("moveEntry", () => {
-  it("returns null without moving when the unsaved-changes confirmation is cancelled", async () => {
-    const move = vi.fn();
+  it("preserves unsaved edits when moving a folder fails", async () => {
+    const move = vi.fn().mockRejectedValue(new Error("destination already exists"));
     Object.assign(window.api.files, { move });
     const { session, fireFrame } = openSession("notes/a.excalidraw", { mode: "off" });
     useStore.setState({
@@ -279,12 +279,14 @@ describe("moveEntry", () => {
     });
     session.onChange(elements, appState, files);
     fireFrame();
-    const state = useStore.getState();
 
-    expect(await useStore.getState().moveEntry("notes", "archive")).toBeNull();
-    expect(unsavedChanges).toHaveBeenCalledExactlyOnceWith("switch");
-    expect(move).not.toHaveBeenCalled();
-    expect(useStore.getState()).toBe(state);
+    await expect(useStore.getState().moveEntry("notes", "archive")).rejects.toThrow(
+      "destination already exists",
+    );
+    expect(move).toHaveBeenCalledWith("notes", "archive");
+    expect(unsavedChanges).not.toHaveBeenCalled();
+    expect(session.isDirty()).toBe(true);
+    expect(useStore.getState().dirtyById).toEqual({ "notes/a.excalidraw": true });
   });
 
   it("does not apply a late move to a different drawings folder", async () => {
