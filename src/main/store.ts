@@ -23,6 +23,10 @@ const schema = {
     type: ["string", "null"],
     default: null,
   },
+  viewports: {
+    type: ["string", "null"],
+    default: null,
+  },
   stagedUpdateVersion: {
     type: ["string", "null"],
     default: null,

@@ -27,6 +27,7 @@ export type CloseFlowDeps = {
     "reportDirtyState" | "flushStarted" | "cancelQuit" | "close"
   >;
   waitForCanvasActionSettled: () => Promise<boolean>;
+  flushViewports: () => Promise<void>;
   addToast: typeof toast.add;
   reportError: (error: unknown, operation: "save") => void;
 };
@@ -116,6 +117,9 @@ export const createCloseFlow = (deps: CloseFlowDeps) => async (request: WindowCl
     return;
   }
 
+  await deps.flushViewports().catch((error: unknown) => {
+    console.error("Failed to persist viewport preferences:", error);
+  });
   await deps.windowApi.close(request.requestId);
   setCloseHandshakeActive(false);
 };

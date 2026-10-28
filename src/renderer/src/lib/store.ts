@@ -33,6 +33,8 @@ import {
 import { pushRecentId, pushSwitcherId, remapRecentIds, removeRecentIds } from "@/lib/recent-files";
 import { sessionOwner } from "@/lib/session-owner";
 import { readStoredTheme, writeStoredTheme } from "@/lib/theme";
+import { viewportCache } from "@/lib/viewport-cache";
+import { viewportPersistence } from "@/lib/viewport-persistence";
 
 const isOpenableFile = (
   entries: FileEntry[],
@@ -83,6 +85,14 @@ const sameIdList = (a: string[], b: string[]): boolean =>
 const persistRecentFileIds = (rootPath: string | null, ids: string[]) => {
   const value = serializeRecentFileHistory(rootPath, ids);
   if (value !== null) void window.api.store.set("recentFiles", value);
+};
+
+const flushViewportPreferences = async () => {
+  try {
+    await viewportPersistence.flush();
+  } catch (error) {
+    console.error("Failed to persist viewport preferences:", error);
+  }
 };
 
 export const nextDefaultName = (
@@ -325,6 +335,15 @@ export const useStore = create<State>((set, get) => {
       if (!sameIdList(recentFileIds, snapshot.prefs.recentFileIds)) {
         persistRecentFileIds(snapshot.info.path, recentFileIds);
       }
+      const fileIds = new Set(
+        snapshot.entries.filter((entry) => entry.kind === "file").map((entry) => entry.id),
+      );
+      if (snapshot.info.path !== null) {
+        viewportCache.pruneRoot(snapshot.info.path, fileIds);
+        void viewportPersistence.pruneRoot(snapshot.info.path, fileIds).catch((error: unknown) => {
+          console.error("Failed to prune viewport preferences:", error);
+        });
+      }
     },
 
     applyEntries: (event) => {
@@ -368,6 +387,15 @@ export const useStore = create<State>((set, get) => {
       if (recentsChanged) {
         persistRecentFileIds(event.info?.path ?? state.drawings?.path ?? null, prunedRecentFileIds);
       }
+      if (eventIds !== null) {
+        const rootPath = event.root ?? event.info?.path ?? state.drawings?.path ?? null;
+        if (rootPath !== null) {
+          viewportCache.pruneRoot(rootPath, eventIds);
+          void viewportPersistence.pruneRoot(rootPath, eventIds).catch((error: unknown) => {
+            console.error("Failed to prune viewport preferences:", error);
+          });
+        }
+      }
 
       filesRevision = event.revision;
     },
@@ -378,6 +406,7 @@ export const useStore = create<State>((set, get) => {
 
       const ok = await get().ensureCleanOrConfirm("switch");
       if (!ok) return false;
+      await flushViewportPreferences();
 
       if (fileId === null) {
         set({ openFileId: null, error: null, externalConflict: null });
@@ -427,6 +456,7 @@ export const useStore = create<State>((set, get) => {
           set({ pendingCanvasAction: false, scratchUnsaved: false });
           return false;
         }
+        await flushViewportPreferences();
 
         set({
           openFileId: fileId,
@@ -466,6 +496,11 @@ export const useStore = create<State>((set, get) => {
       }
 
       const entry = await window.api.files.rename(id, newName);
+      const rootPath = get().drawings?.path ?? null;
+      viewportCache.remapSubtree(rootPath, id, entry.id);
+      await viewportPersistence.remapSubtree(rootPath, id, entry.id).catch((error: unknown) => {
+        console.error("Failed to remap viewport preferences:", error);
+      });
       const activeSessionFileId = sessionOwner.getActiveFileId();
       if (activeSessionFileId) {
         const remappedActive = remapId(activeSessionFileId, id, entry.id);
@@ -535,6 +570,11 @@ export const useStore = create<State>((set, get) => {
       }
 
       await window.api.files.delete(id, mode);
+      const rootPath = get().drawings?.path ?? null;
+      viewportCache.deleteSubtree(rootPath, id);
+      await viewportPersistence.deleteSubtree(rootPath, id).catch((error: unknown) => {
+        console.error("Failed to remove viewport preferences:", error);
+      });
 
       const { entries, recentFileIds, switcherFileIds } = get();
       const next = applySubtreeDelete({ entries, openFileId, dirtyById, rawDirtyById }, id);
@@ -602,6 +642,7 @@ export const useStore = create<State>((set, get) => {
 
       const name = resolveEntryName(get().entries, parentId, kind, requestedName);
 
+      if (kind === "file") await flushViewportPreferences();
       const entry = await window.api.files.create(parentId, name, kind);
       if (kind !== "file") {
         set((state) => ({
@@ -821,6 +862,7 @@ export const useStore = create<State>((set, get) => {
       if (info === null) return false;
       if (info.path !== null && info.path === previousPath && info.configured) return true;
 
+      await flushViewportPreferences();
       const pausedSession = sessionOwner.getSession();
       pausedSession?.setAutosavePaused(true);
       try {

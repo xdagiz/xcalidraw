@@ -56,7 +56,8 @@ import { createScratchController } from "@/lib/scratch-session";
 import { sessionOwner } from "@/lib/session-owner";
 import { useStore } from "@/lib/store";
 import { stripExcalidraw } from "@/lib/utils";
-import { applyViewport, createViewportCache, viewportOf } from "@/lib/viewport-cache";
+import { applyViewport, viewportCache, viewportOf } from "@/lib/viewport-cache";
+import { viewportPersistence } from "@/lib/viewport-persistence";
 
 type DrawingData = {
   elements?: ExcalidrawElement[];
@@ -73,10 +74,9 @@ type LoadedDrawing = {
   baseline: string | null;
 };
 
-const viewportCache = createViewportCache();
-
 const loadDrawing = async (
   fileId: string,
+  rootPath: string | null,
   sessionContent?: string | null,
 ): Promise<LoadedDrawing> => {
   const content = sessionContent ?? (await window.api.files.read(fileId));
@@ -85,7 +85,16 @@ const loadDrawing = async (
   const files = parsed.files ?? undefined;
 
   const restored = restoreAppState(parsed.appState ?? null, null);
-  const appState = applyViewport(restored, viewportCache.get(fileId));
+  const cachedViewport = viewportCache.get(rootPath, fileId);
+  const persistedViewport = await viewportPersistence.get(rootPath, fileId);
+  const appState = applyViewport(restored, cachedViewport ?? persistedViewport);
+  const viewport = viewportOf(appState);
+  viewportCache.set(rootPath, fileId, viewport);
+  if (rootPath !== null && persistedViewport === undefined) {
+    void viewportPersistence.set(rootPath, fileId, viewport).catch((error: unknown) => {
+      console.error("Failed to save initial viewport preference:", error);
+    });
+  }
   const elements = restoreElements(rawElements, null, {
     repairBindings: true,
   });
@@ -179,6 +188,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         : entries.find((entry) => entry.id === homeReturnFileId && entry.kind === "file"),
     [homeReturnFileId, entries],
   );
+  const drawingsPath = useStore((s) => s.drawings?.path ?? null);
   const fileName = useStore((s) =>
     fileId ? (s.entries.find((e) => e.id === fileId)?.name ?? fileId) : "",
   );
@@ -195,10 +205,17 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
       createEntry: () => useStore.getState().createEntry(null, "file"),
       readFile: (id) => window.api.files.read(id),
       deleteFile: (id) => {
-        viewportCache.delete(id);
+        const rootPath = useStore.getState().drawings?.path ?? null;
+        viewportCache.deleteSubtree(rootPath, id);
+        void viewportPersistence.deleteSubtree(rootPath, id).catch((error: unknown) => {
+          console.error("Failed to remove viewport preference:", error);
+        });
         void window.api.files.delete(id, "permanent").catch(() => undefined);
       },
-      deleteViewport: (id) => viewportCache.delete(id),
+      deleteViewport: (id) => {
+        const rootPath = useStore.getState().drawings?.path ?? null;
+        viewportCache.deleteSubtree(rootPath, id);
+      },
       acquireSession: (scratchFileId, diskBaseline) =>
         sessionOwner.acquire(
           scratchFileId,
@@ -450,7 +467,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         cancelRequest = sceneSwitcher.start(
           () => {
             const content = canvasSeeded ? scratch.getSession()?.getSerializedContent() : null;
-            return loadDrawing(fileId, content);
+            return loadDrawing(fileId, drawingsPath, content);
           },
           async ({ drawing, baseline }, isCurrent) => {
             if (!isCurrent() || useStore.getState().openFileId !== fileId) return;
@@ -490,7 +507,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
 
       return cancel;
     },
-    [fileId, excalidrawApi, scratch, sceneSwitcher],
+    [fileId, drawingsPath, excalidrawApi, scratch, sceneSwitcher],
   );
 
   useLayoutEffect(() => {
@@ -616,7 +633,15 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
       if (sceneLoadingRef.current) return;
 
       if (fileId !== null) {
-        if (!appState.isLoading) viewportCache.set(fileId, viewportOf(appState));
+        if (!appState.isLoading) {
+          const rootPath = drawingsPath;
+          const viewport = viewportOf(appState);
+          if (viewportCache.set(rootPath, fileId, viewport) && rootPath !== null) {
+            void viewportPersistence.set(rootPath, fileId, viewport).catch((error: unknown) => {
+              console.error("Failed to save viewport preference:", error);
+            });
+          }
+        }
         scratch.getSession()?.onChange(elements, appState, files);
         return;
       }
@@ -628,11 +653,11 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
 
       const reserved = scratch.getState();
       if (reserved.phase === "reserved") {
-        viewportCache.set(reserved.fileId, viewportOf(appState));
+        viewportCache.set(drawingsPath, reserved.fileId, viewportOf(appState));
       }
       scratch.capture(elements, appState, files);
     },
-    [fileId, scratch, excalidrawApi],
+    [fileId, scratch, excalidrawApi, drawingsPath],
   );
 
   // TODO: update this with renderTopLeftUI when a new release includes it

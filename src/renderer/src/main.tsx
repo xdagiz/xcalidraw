@@ -17,6 +17,7 @@ import { createMcpHandler, getMcpCanvas } from "./lib/mcp-bridge";
 import { reportFatalToMain, reportRendererError } from "./lib/report-error";
 import { sessionOwner } from "./lib/session-owner";
 import { useStore } from "./lib/store";
+import { viewportPersistence } from "./lib/viewport-persistence";
 
 installRendererErrorHandlers();
 
@@ -50,6 +51,7 @@ window.api.window.onWillClose(
             listener(state.pendingCanvasAction);
           }),
       ),
+    flushViewports: () => viewportPersistence.flush(),
     addToast: toast.add,
     reportError: reportRendererError,
   }),

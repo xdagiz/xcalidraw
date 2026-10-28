@@ -3,7 +3,7 @@ import type { RendererSafeError } from "./errors";
 
 export const FILE_NOT_FOUND_MESSAGE = "File not found";
 
-export type RendererStoreKey = "lastOpenedFileId" | "libraryItems" | "recentFiles";
+export type RendererStoreKey = "lastOpenedFileId" | "libraryItems" | "recentFiles" | "viewports";
 
 export type ContextMenuRequest = {
   items: { id: string; label: string }[];
@@ -140,6 +140,7 @@ export type StoreType = {
   lastOpenedFileId?: string | null;
   libraryItems?: string | null;
   recentFiles?: string | null;
+  viewports?: string | null;
   stagedUpdateVersion?: string | null;
   declinedUpdateVersion?: string | null;
   theme?: ThemePreference;

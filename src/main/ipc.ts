@@ -62,6 +62,7 @@ import type {
   UpdateStatus,
 } from "@shared/ipc";
 import { parseRecentFileHistory } from "@shared/recent-history";
+import { MAX_VIEWPORT_STORE_BYTES, viewportStoreFrom } from "@shared/viewport";
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol } from "electron";
 
 import { log } from "./logger";
@@ -376,7 +377,12 @@ export const normalizeContextMenuPos = (x: number, y: number, zoomFactor: number
 };
 
 export function assertRendererStoreKey(key: unknown): asserts key is RendererStoreKey {
-  if (key !== "lastOpenedFileId" && key !== "libraryItems" && key !== "recentFiles") {
+  if (
+    key !== "lastOpenedFileId" &&
+    key !== "libraryItems" &&
+    key !== "recentFiles" &&
+    key !== "viewports"
+  ) {
     throw codedError("Store key is not allowed", {
       code: "INVALID",
       reason: "invalid-payload",
@@ -445,6 +451,13 @@ export const registerIpcHandlers = (deps: Deps) => {
   handle(STORE_GET, "unexpected", (_event, key) => {
     assertRendererStoreKey(key);
     const value = store.get(key);
+    if (key === "viewports") {
+      return typeof value === "string" &&
+        Buffer.byteLength(value, "utf8") <= MAX_VIEWPORT_STORE_BYTES &&
+        viewportStoreFrom(value) !== null
+        ? value
+        : null;
+    }
     return typeof value === "string" ? value : null;
   });
 
@@ -482,6 +495,23 @@ export const registerIpcHandlers = (deps: Deps) => {
           parseRecentFileHistory(raw) === null
         ) {
           throw codedError("value must be a valid recent-file history", {
+            code: "INVALID",
+            reason: "invalid-payload",
+            field: "value",
+          });
+        }
+        value = raw;
+      }
+    } else if (key === "viewports") {
+      if (raw === null) {
+        value = null;
+      } else {
+        if (
+          typeof raw !== "string" ||
+          Buffer.byteLength(raw, "utf8") > MAX_VIEWPORT_STORE_BYTES ||
+          viewportStoreFrom(raw) === null
+        ) {
+          throw codedError("value must be a valid viewport store", {
             code: "INVALID",
             reason: "invalid-payload",
             field: "value",

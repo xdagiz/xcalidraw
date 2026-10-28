@@ -2,37 +2,46 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { applyViewport, createViewportCache, viewportOf } from "./viewport-cache";
 
+const root = "/drawings";
+
 describe("createViewportCache", () => {
-  it("roundtrips a stored viewport", () => {
+  it("roundtrips viewports and detects changes", () => {
     const cache = createViewportCache();
-    cache.set("a.excalidraw", { scrollX: 10, scrollY: -20, zoom: 2.5 });
-    expect(cache.get("a.excalidraw")).toEqual({ scrollX: 10, scrollY: -20, zoom: 2.5 });
+    const viewport = { scrollX: 10, scrollY: -20, zoom: 2.5 };
+    expect(cache.set(root, "a.excalidraw", viewport)).toBe(true);
+    expect(cache.get(root, "a.excalidraw")).toEqual(viewport);
+    expect(cache.set(root, "a.excalidraw", viewport)).toBe(false);
   });
 
-  it("returns undefined for unknown files", () => {
+  it("isolates identical file ids in different roots", () => {
     const cache = createViewportCache();
-    expect(cache.get("missing.excalidraw")).toBeUndefined();
+    cache.set("/one", "a.excalidraw", { scrollX: 10, scrollY: 20, zoom: 2 });
+    cache.set("/two", "a.excalidraw", { scrollX: 30, scrollY: 40, zoom: 3 });
+    expect(cache.get("/one", "a.excalidraw")).toEqual({ scrollX: 10, scrollY: 20, zoom: 2 });
+    expect(cache.get("/two", "a.excalidraw")).toEqual({ scrollX: 30, scrollY: 40, zoom: 3 });
   });
 
-  it("rejects non-finite and non-positive values on read", () => {
+  it("rejects invalid viewport values", () => {
     const cache = createViewportCache();
-    cache.set("a.excalidraw", { scrollX: Number.NaN, scrollY: 0, zoom: 1 });
-    cache.set("b.excalidraw", { scrollX: 0, scrollY: Number.POSITIVE_INFINITY, zoom: 1 });
-    cache.set("c.excalidraw", { scrollX: 0, scrollY: 0, zoom: 0 });
-    cache.set("d.excalidraw", { scrollX: 0, scrollY: 0, zoom: -1 });
-    expect(cache.get("a.excalidraw")).toBeUndefined();
-    expect(cache.get("b.excalidraw")).toBeUndefined();
-    expect(cache.get("c.excalidraw")).toBeUndefined();
-    expect(cache.get("d.excalidraw")).toBeUndefined();
+    expect(cache.set(root, "a.excalidraw", { scrollX: Number.NaN, scrollY: 0, zoom: 1 })).toBe(
+      false,
+    );
+    expect(cache.set(root, "b.excalidraw", { scrollX: 0, scrollY: 0, zoom: 31 })).toBe(false);
   });
 
-  it("deletes entries", () => {
+  it("remaps and deletes a renamed subtree without matching sibling names", () => {
     const cache = createViewportCache();
-    cache.set("a.excalidraw", { scrollX: 1, scrollY: 2, zoom: 1 });
-    cache.delete("a.excalidraw");
-    expect(cache.get("a.excalidraw")).toBeUndefined();
-    cache.delete("a.excalidraw");
-    expect(cache.get("a.excalidraw")).toBeUndefined();
+    const viewport = { scrollX: 1, scrollY: 2, zoom: 1 };
+    cache.set(root, "folder/a.excalidraw", viewport);
+    cache.set(root, "folder/nested/b.excalidraw", viewport);
+    cache.set(root, "folder-other/c.excalidraw", viewport);
+    cache.remapSubtree(root, "folder", "renamed");
+    expect(cache.get(root, "renamed/a.excalidraw")).toEqual(viewport);
+    expect(cache.get(root, "renamed/nested/b.excalidraw")).toEqual(viewport);
+    expect(cache.get(root, "folder/a.excalidraw")).toBeUndefined();
+    cache.deleteSubtree(root, "renamed");
+    expect(cache.get(root, "renamed/a.excalidraw")).toBeUndefined();
+    expect(cache.get(root, "folder-other/c.excalidraw")).toEqual(viewport);
   });
 });
 
