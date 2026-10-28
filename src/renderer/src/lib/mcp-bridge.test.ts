@@ -94,6 +94,14 @@ describe("createMcpHandler", () => {
     openFileId = "/d/b.excalidraw";
     await expect(pending).rejects.toThrow("changed");
   });
+
+  it("refuses to insert into a drawing other than the one pinned", async () => {
+    const canvas: McpCanvas = { api: fakeApi([]), fileId: "/d/b.excalidraw", isReady: () => true };
+    const handle = setup({ getOpenFileId: () => "/d/b.excalidraw", getCanvas: () => canvas });
+    await expect(
+      handle("insert_elements", { drawingId: "/d/a.excalidraw", elements: [{ id: "x" }] }),
+    ).rejects.toThrow("changed");
+  });
 });
 
 describe("withFreshIds", () => {

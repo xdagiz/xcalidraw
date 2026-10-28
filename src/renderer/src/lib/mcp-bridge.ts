@@ -223,9 +223,10 @@ export const createMcpHandler = (deps: McpHandlerDeps) => {
 
   // Editing tools load the library first: a drawing switch can finish during that await,
   // and the editor reuses one API across drawings.
-  const editableCanvas = async () => {
+  const editableCanvas = async (expectedId?: unknown) => {
     // Pin the drawing the agent was looking at when it called.
     const fileId = requireOpenFileId();
+    if (typeof expectedId === "string" && expectedId !== fileId) throw drawingChanged();
     const excalidraw = await loadExcalidraw();
     return { ...excalidraw, fileId, canvas: await waitForCanvas(fileId) };
   };
@@ -250,6 +251,8 @@ export const createMcpHandler = (deps: McpHandlerDeps) => {
 
   const tools: Record<string, (args: Record<string, unknown>) => Promise<unknown>> = {
     get_open_drawing: describe,
+
+    open_drawing_id: async () => ({ id: requireOpenFileId() }),
 
     open_drawing: async ({ id }) => {
       if (
@@ -400,7 +403,7 @@ export const createMcpHandler = (deps: McpHandlerDeps) => {
       return { deleted: [...doomed] };
     },
 
-    insert_elements: async ({ elements, x, y }) => {
+    insert_elements: async ({ drawingId, elements, x, y }) => {
       if (!Array.isArray(elements) || !elements.every(isRecord)) {
         throw new Error("That library item has no elements.");
       }
@@ -411,7 +414,7 @@ export const createMcpHandler = (deps: McpHandlerDeps) => {
         restoreElements,
         fileId,
         canvas,
-      } = await editableCanvas();
+      } = await editableCanvas(drawingId);
       const fresh = restoreElements(
         withFreshIds(elements).flatMap((element) => (isRawElement(element) ? [element] : [])),
         null,

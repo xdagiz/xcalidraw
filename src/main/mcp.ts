@@ -235,12 +235,18 @@ const buildServer = () => {
       },
     },
     async ({ library, item, x, y }) => {
+      // Pin the drawing before the download so a switch meanwhile can't redirect the item.
+      const { id: drawingId } = z
+        .object({ id: z.string() })
+        .parse(await askEditor("open_drawing_id"));
       const { items } = await getLibraryItems(library);
       const picked = items[item];
       if (!picked)
         throw new Error(`That library has ${items.length} items (0-${items.length - 1}).`);
       if (picked.elements.length > MAX_ITEM_ELEMENTS) throw new Error("That item is too large.");
-      return text(await askEditor("insert_elements", { elements: picked.elements, x, y }));
+      return text(
+        await askEditor("insert_elements", { drawingId, elements: picked.elements, x, y }),
+      );
     },
   );
 
