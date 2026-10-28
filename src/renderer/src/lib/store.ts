@@ -292,12 +292,17 @@ export const useStore = create<State>((set, get) => {
     return true;
   };
 
-  const commitSubtreeRemap = async (oldId: string, entry: FileEntry) => {
-    const rootPath = get().drawings?.path ?? null;
+  const commitSubtreeRemap = async (
+    oldId: string,
+    entry: FileEntry,
+    expectedRootPath: string | null,
+  ) => {
+    const rootPath = expectedRootPath;
     viewportCache.remapSubtree(rootPath, oldId, entry.id);
     await viewportPersistence.remapSubtree(rootPath, oldId, entry.id).catch((error: unknown) => {
       console.error("Failed to remap viewport preferences:", error);
     });
+    if ((get().drawings?.path ?? null) !== expectedRootPath) return null;
 
     const activeSessionFileId = sessionOwner.getActiveFileId();
     if (activeSessionFileId) {
@@ -555,19 +560,25 @@ export const useStore = create<State>((set, get) => {
     },
 
     renameEntry: async (id, newName) => {
+      const rootPath = get().drawings?.path ?? null;
       if (!(await confirmSubtreeChange(id))) return null;
       const entry = await window.api.files.rename(id, newName);
-      return commitSubtreeRemap(id, entry);
+      if ((get().drawings?.path ?? null) !== rootPath) return null;
+      return commitSubtreeRemap(id, entry, rootPath);
     },
 
     moveEntry: async (id, parentId) => {
+      const rootPath = get().drawings?.path ?? null;
       if (!(await confirmSubtreeChange(id))) return null;
       const entry = await window.api.files.move(id, parentId);
-      return commitSubtreeRemap(id, entry);
+      if ((get().drawings?.path ?? null) !== rootPath) return null;
+      return commitSubtreeRemap(id, entry, rootPath);
     },
 
     copyEntry: async (id, parentId) => {
+      const rootPath = get().drawings?.path ?? null;
       const created = await window.api.files.copy(id, parentId);
+      if ((get().drawings?.path ?? null) !== rootPath) return null;
       const root = created[0];
       if (!root) return null;
       set((state) => {

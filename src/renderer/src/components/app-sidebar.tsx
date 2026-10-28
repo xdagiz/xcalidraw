@@ -319,16 +319,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   const performMove = useCallback(
     async (sourceId: string, destParentId: string | null) => {
       const check = canReparent(sourceId, destParentId, entries);
-      if (!check.ok) {
-        if (check.reason === "into-self") {
-          toast.add({
-            title: "Couldn’t move this item",
-            description: "A folder cannot be moved into itself.",
-            type: "error",
-          });
-        }
-        return null;
-      }
+      if (!check.ok) return null;
 
       try {
         const moved = await moveEntry(sourceId, destParentId);

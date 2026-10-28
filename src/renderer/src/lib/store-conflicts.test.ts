@@ -92,7 +92,11 @@ beforeEach(() => {
   write.mockReset().mockResolvedValue(entry(150));
   unsavedChanges.mockReset().mockResolvedValue("cancel");
   vi.stubGlobal("window", {
-    api: { files: { write }, dialog: { unsavedChanges }, store: { set: vi.fn() } },
+    api: {
+      files: { write },
+      dialog: { unsavedChanges },
+      store: { get: vi.fn().mockResolvedValue(null), set: vi.fn() },
+    },
   });
   useStore.setState(useStore.getInitialState(), true);
   useStore.setState({ entries: [entry(100)], openFileId: fileId, editorGeneration: 7 });
@@ -283,6 +287,47 @@ describe("moveEntry", () => {
     expect(useStore.getState()).toBe(state);
   });
 
+  it("does not apply a late move to a different drawings folder", async () => {
+    const pending = Promise.withResolvers<FileEntry>();
+    const move = vi.fn(() => pending.promise);
+    Object.assign(window.api.files, { move });
+    useStore.setState({
+      drawings: {
+        path: "/first",
+        displayPath: "/first",
+        displayName: "first",
+        configured: true,
+        missing: false,
+      },
+      entries: [
+        folderEntry("notes", null, "directory"),
+        folderEntry("notes/a.excalidraw", "notes"),
+      ],
+    });
+
+    const moving = useStore.getState().moveEntry("notes", "archive");
+    useStore.setState({
+      drawings: {
+        path: "/second",
+        displayPath: "/second",
+        displayName: "second",
+        configured: true,
+        missing: false,
+      },
+      entries: [
+        folderEntry("notes", null, "directory"),
+        folderEntry("notes/a.excalidraw", "notes"),
+      ],
+    });
+    pending.resolve(folderEntry("archive/notes", "archive", "directory"));
+
+    expect(await moving).toBeNull();
+    expect(useStore.getState().entries.map((item) => item.id)).toEqual([
+      "notes",
+      "notes/a.excalidraw",
+    ]);
+  });
+
   it("remaps the open drawing, a dirty sibling, and recents", async () => {
     const moved = folderEntry("archive/notes", "archive", "directory");
     const move = vi.fn().mockResolvedValue(moved);
@@ -330,6 +375,37 @@ describe("copyEntry", () => {
     expect(await useStore.getState().copyEntry(fileId, null)).toBe("a copy.excalidraw");
     expect(unsavedChanges).not.toHaveBeenCalled();
     expect(copy).toHaveBeenCalledWith(fileId, null);
+  });
+
+  it("does not insert a late copy into a different drawings folder", async () => {
+    const pending = Promise.withResolvers<FileEntry[]>();
+    const copy = vi.fn(() => pending.promise);
+    Object.assign(window.api.files, { copy });
+    useStore.setState({
+      drawings: {
+        path: "/first",
+        displayPath: "/first",
+        displayName: "first",
+        configured: true,
+        missing: false,
+      },
+    });
+
+    const copying = useStore.getState().copyEntry(fileId, null);
+    useStore.setState({
+      drawings: {
+        path: "/second",
+        displayPath: "/second",
+        displayName: "second",
+        configured: true,
+        missing: false,
+      },
+      entries: [folderEntry(fileId, null)],
+    });
+    pending.resolve([folderEntry("a copy.excalidraw", null)]);
+
+    expect(await copying).toBeNull();
+    expect(useStore.getState().entries.map((item) => item.id)).toEqual([fileId]);
   });
 
   it("inserts the copied entries without changing the open drawing", async () => {
