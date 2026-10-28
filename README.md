@@ -16,6 +16,29 @@
 - **Local files:** Choose the folder where your `.excalidraw` drawings live.
 - **Library management:** Create, rename, and delete drawings and folders.
 
+## AI agents (MCP)
+
+xcalidraw can let AI agents read and draw on your drawings live. Edits autosave and undo with Ctrl+Z.
+
+1. Turn on **Settings → Agents → Let AI agents edit drawings**. The server runs on `http://127.0.0.1:29180/mcp` while xcalidraw is open.
+2. Add it to your agent:
+
+   - **Claude Code:** `claude mcp add --transport http xcalidraw http://127.0.0.1:29180/mcp`
+   - **Codex:** `codex mcp add xcalidraw --url http://127.0.0.1:29180/mcp`
+   - **OpenCode:** add this to `~/.config/opencode/opencode.json`:
+
+     ```json
+     {
+       "mcp": {
+         "xcalidraw": { "type": "remote", "url": "http://127.0.0.1:29180/mcp", "enabled": true }
+       }
+     }
+     ```
+
+3. Restart the agent and ask it to draw, e.g. "draw a login flow in a new drawing".
+
+Agents can list, open and create drawings, add, change and delete elements, and use any [Excalidraw library](https://libraries.excalidraw.com).
+
 ## Download
 
 Get the latest Windows, macOS, and Linux builds from [GitHub Releases](https://github.com/xdagiz/xcalidraw/releases).
