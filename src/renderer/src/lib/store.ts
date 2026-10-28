@@ -338,7 +338,7 @@ export const useStore = create<State>((set, get) => {
       const fileIds = new Set(
         snapshot.entries.filter((entry) => entry.kind === "file").map((entry) => entry.id),
       );
-      if (snapshot.info.path !== null) {
+      if (snapshot.info.path !== null && snapshot.info.configured && !snapshot.info.missing) {
         viewportCache.pruneRoot(snapshot.info.path, fileIds);
         void viewportPersistence.pruneRoot(snapshot.info.path, fileIds).catch((error: unknown) => {
           console.error("Failed to prune viewport preferences:", error);

@@ -375,7 +375,10 @@ export const onDirtyState = (
   clearTimer(win);
 
   if (!dirty) {
-    closeWindow(win);
+    state.kind = "flush";
+    const request: WindowCloseRequest = { requestId: state.requestId, kind: "flush" };
+    sendToRenderer(win, WINDOW_WILL_CLOSE, request);
+    armSilentTimer(win, osShutdown ? SHUTDOWN_FLUSH_SILENCE_TIMEOUT_MS : FLUSH_SILENCE_TIMEOUT_MS);
     return;
   }
 

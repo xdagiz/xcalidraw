@@ -16,6 +16,8 @@ import { buildCommands } from "./commands";
 import { createDrawingSession, type FrameScheduler } from "./drawing-session";
 import { sessionOwner } from "./session-owner";
 import { useStore } from "./store";
+import { viewportCache } from "./viewport-cache";
+import { viewportPersistence } from "./viewport-persistence";
 
 const fileId = "a.excalidraw";
 const entry = (modifiedAt: number): FileEntry => ({
@@ -102,7 +104,56 @@ afterEach(() => {
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   vi.clearAllMocks();
+});
+
+describe("loadSnapshot viewport pruning", () => {
+  it("preserves viewports for a missing drawings folder and prunes stale entries when available", () => {
+    const root = "/drawings";
+    const keptViewport = { scrollX: 12, scrollY: -8, zoom: 2.5 };
+    const staleViewport = { scrollX: 24, scrollY: -16, zoom: 1.5 };
+    viewportCache.set(root, fileId, keptViewport);
+    viewportCache.set(root, "b.excalidraw", staleViewport);
+    const pruneCache = vi.spyOn(viewportCache, "pruneRoot");
+    const prunePersistence = vi
+      .spyOn(viewportPersistence, "pruneRoot")
+      .mockResolvedValue(undefined);
+
+    useStore.getState().loadSnapshot({
+      info: {
+        path: root,
+        displayPath: root,
+        displayName: "drawings",
+        configured: false,
+        missing: true,
+      },
+      entries: [],
+      prefs: { lastOpenedFileId: null, recentFileIds: [] },
+    });
+
+    expect(pruneCache).not.toHaveBeenCalled();
+    expect(prunePersistence).not.toHaveBeenCalled();
+    expect(viewportCache.get(root, fileId)).toEqual(keptViewport);
+    expect(viewportCache.get(root, "b.excalidraw")).toEqual(staleViewport);
+
+    useStore.getState().loadSnapshot({
+      info: {
+        path: root,
+        displayPath: root,
+        displayName: "drawings",
+        configured: true,
+        missing: false,
+      },
+      entries: [entry(100)],
+      prefs: { lastOpenedFileId: null, recentFileIds: [] },
+    });
+
+    expect(pruneCache).toHaveBeenCalledOnce();
+    expect(prunePersistence).toHaveBeenCalledOnce();
+    expect(viewportCache.get(root, fileId)).toEqual(keptViewport);
+    expect(viewportCache.get(root, "b.excalidraw")).toBeUndefined();
+  });
 });
 
 describe("renameEntry", () => {

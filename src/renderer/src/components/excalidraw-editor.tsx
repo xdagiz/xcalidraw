@@ -58,6 +58,7 @@ import { useStore } from "@/lib/store";
 import { stripExcalidraw } from "@/lib/utils";
 import { applyViewport, viewportCache, viewportOf } from "@/lib/viewport-cache";
 import { viewportPersistence } from "@/lib/viewport-persistence";
+import { createViewportRecorder } from "@/lib/viewport-recorder";
 
 type DrawingData = {
   elements?: ExcalidrawElement[];
@@ -73,6 +74,8 @@ type LoadedDrawing = {
   };
   baseline: string | null;
 };
+
+const recordViewport = createViewportRecorder(viewportCache, viewportPersistence);
 
 const loadDrawing = async (
   fileId: string,
@@ -636,11 +639,9 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         if (!appState.isLoading) {
           const rootPath = drawingsPath;
           const viewport = viewportOf(appState);
-          if (viewportCache.set(rootPath, fileId, viewport) && rootPath !== null) {
-            void viewportPersistence.set(rootPath, fileId, viewport).catch((error: unknown) => {
-              console.error("Failed to save viewport preference:", error);
-            });
-          }
+          void recordViewport(rootPath, fileId, viewport).catch((error: unknown) => {
+            console.error("Failed to save viewport preference:", error);
+          });
         }
         scratch.getSession()?.onChange(elements, appState, files);
         return;
@@ -653,7 +654,11 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
 
       const reserved = scratch.getState();
       if (reserved.phase === "reserved") {
-        viewportCache.set(drawingsPath, reserved.fileId, viewportOf(appState));
+        void recordViewport(drawingsPath, reserved.fileId, viewportOf(appState)).catch(
+          (error: unknown) => {
+            console.error("Failed to save viewport preference:", error);
+          },
+        );
       }
       scratch.capture(elements, appState, files);
     },

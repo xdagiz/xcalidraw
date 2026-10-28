@@ -122,6 +122,26 @@ describe("close guard", () => {
     return requestId;
   };
 
+  it("flushes a clean close before destroying the window", () => {
+    const { win, browserWindow } = setupWindow();
+
+    win.emit("close", closeEvent());
+    const requestId = sentRequestId(win, 0);
+    closeGuard.onDirtyState(browserWindow, requestId, false, false);
+
+    expect(win.destroyed).toBe(false);
+    expect(sentRequestId(win, 1)).toBe(requestId);
+    expect(win.webContents.send).toHaveBeenNthCalledWith(2, WINDOW_WILL_CLOSE, {
+      requestId,
+      kind: "flush",
+    });
+
+    closeGuard.onFlushStarted(browserWindow, requestId);
+    closeGuard.destroyWindow(browserWindow, requestId);
+
+    expect(win.destroyed).toBe(true);
+  });
+
   it("runs a quit callback only after the renderer approves the close", () => {
     const { win, browserWindow } = setupWindow();
     const onApproved = vi.fn(() => true);
@@ -131,6 +151,11 @@ describe("close guard", () => {
 
     expect(onApproved).not.toHaveBeenCalled();
     closeGuard.onDirtyState(browserWindow, requestId, false, false);
+
+    expect(onApproved).not.toHaveBeenCalled();
+    expect(win.destroyed).toBe(false);
+    closeGuard.onFlushStarted(browserWindow, requestId);
+    closeGuard.destroyWindow(browserWindow, requestId);
 
     expect(onApproved).toHaveBeenCalledOnce();
     expect(win.destroyed).toBe(false);
@@ -167,6 +192,10 @@ describe("close guard", () => {
     });
     const requestId = sentRequestId(win, 0);
     closeGuard.onDirtyState(browserWindow, requestId, false, false);
+
+    expect(onCancelled).not.toHaveBeenCalled();
+    closeGuard.onFlushStarted(browserWindow, requestId);
+    closeGuard.destroyWindow(browserWindow, requestId);
 
     expect(onCancelled).toHaveBeenCalledOnce();
     expect(closeGuard.isQuittingNow()).toBe(false);

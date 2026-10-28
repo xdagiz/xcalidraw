@@ -1,7 +1,9 @@
 import { viewportStoreFrom } from "@shared/viewport";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
+import { createViewportCache } from "./viewport-cache";
 import { createViewportPersistence } from "./viewport-persistence";
+import { createViewportRecorder } from "./viewport-recorder";
 
 const root = "/drawings";
 const viewport = { scrollX: 12, scrollY: -8, zoom: 2.5 };
@@ -47,6 +49,20 @@ describe("createViewportPersistence", () => {
     });
   });
 
+  it("persists a reserved viewport before the bound editor repeats it", async () => {
+    vi.useFakeTimers();
+    const cache = createViewportCache();
+    const { persistence, set } = makePersistence();
+    const recordViewport = createViewportRecorder(cache, persistence);
+
+    await recordViewport(root, "scratch.excalidraw", viewport);
+    await recordViewport(root, "scratch.excalidraw", viewport);
+    await persistence.flush();
+
+    expect(set).toHaveBeenCalledOnce();
+    expect(await persistence.get(root, "scratch.excalidraw")).toEqual(viewport);
+  });
+
   it("flushes pending writes immediately", async () => {
     vi.useFakeTimers();
     const { persistence, set } = makePersistence();
@@ -71,6 +87,7 @@ describe("createViewportPersistence", () => {
     const { persistence, set } = makePersistence(invalid);
     expect(await persistence.get(root, "a.excalidraw")).toBeUndefined();
     await persistence.set(root, "a.excalidraw", { ...viewport, zoom: 0 });
+    await persistence.flush();
     expect(set).not.toHaveBeenCalled();
   });
 
