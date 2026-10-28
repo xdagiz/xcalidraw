@@ -4,6 +4,7 @@ import { createServer, type Server } from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { MCP_REQUEST, MCP_RESPONSE } from "@shared/channels";
+import { codedError } from "@shared/errors";
 import { MCP_PORT, type McpResponse } from "@shared/ipc";
 import { app, ipcMain } from "electron";
 import { z } from "zod";
@@ -185,22 +186,23 @@ const buildServer = () => {
 
 let http: Server | null = null;
 
+// Resolves once the port is bound, so callers can tell the user when it isn't.
 export const startMcpServer = () => {
-  if (http) return;
+  if (http) return Promise.resolve();
 
-  http = createServer(async (req, res) => {
+  const server = createServer(async (req, res) => {
     if (req.url !== "/mcp" || !isAllowedRequest(req.headers.host, req.headers.origin)) {
       res.writeHead(403).end();
       return;
     }
 
     // Stateless: a fresh server per request, nothing to clean up between agents.
-    const server = buildServer();
+    const mcp = buildServer();
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    res.on("close", () => void server.close());
+    res.on("close", () => void mcp.close());
 
     try {
-      await server.connect(transport);
+      await mcp.connect(transport);
       await transport.handleRequest(req, res);
     } catch (error) {
       log.error("[mcp] request failed", error);
@@ -208,11 +210,24 @@ export const startMcpServer = () => {
     }
   });
 
-  http.on("error", (error) => {
-    log.error("[mcp] server error", error);
-    http = null;
+  http = server;
+  return new Promise<void>((resolve, reject) => {
+    server.once("error", (error) => {
+      log.error("[mcp] server error", error);
+      if (http === server) http = null;
+      reject(
+        codedError(
+          `Couldn't start the MCP server on port ${MCP_PORT}`,
+          { code: "UNKNOWN", reason: "port-in-use" },
+          { cause: error },
+        ),
+      );
+    });
+    server.listen(MCP_PORT, "127.0.0.1", () => {
+      log.info(`[mcp] listening on 127.0.0.1:${MCP_PORT}`);
+      resolve();
+    });
   });
-  http.listen(MCP_PORT, "127.0.0.1", () => log.info(`[mcp] listening on 127.0.0.1:${MCP_PORT}`));
 };
 
 export const stopMcpServer = () => {
@@ -220,4 +235,7 @@ export const stopMcpServer = () => {
   http = null;
 };
 
-export const applyMcpSetting = (enabled: boolean) => (enabled ? startMcpServer() : stopMcpServer());
+export const applyMcpSetting = async (enabled: boolean) => {
+  if (enabled) await startMcpServer();
+  else stopMcpServer();
+};

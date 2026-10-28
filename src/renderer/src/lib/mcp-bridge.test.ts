@@ -1,8 +1,10 @@
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { FileEntry } from "@shared/ipc";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { createMcpHandler, type McpCanvas, type McpHandlerDeps } from "./mcp-bridge";
+
+vi.mock("@excalidraw/excalidraw", () => ({}));
 
 const entry = (id: string): FileEntry => ({
   id,
@@ -68,7 +70,28 @@ describe("createMcpHandler", () => {
     const handle = setup();
     await expect(
       handle("update_elements", { elements: [{ id: "x", type: "ellipse" }] }),
-    ).rejects.toThrow("Only these fields");
+    ).rejects.toThrow("can't be changed");
     await expect(handle("update_elements", { elements: [{ x: 1 }] })).rejects.toThrow("id");
+  });
+
+  it("checks each field's type and range", async () => {
+    const handle = setup();
+    for (const changes of [{ x: "bad" }, { text: 42 }, { opacity: 150 }, { fillStyle: "plaid" }]) {
+      await expect(
+        handle("update_elements", { elements: [{ id: "x", ...changes }] }),
+      ).rejects.toThrow("Invalid");
+    }
+  });
+
+  it("refuses to edit when the user switches drawings mid-call", async () => {
+    let openFileId: string | null = "/d/a.excalidraw";
+    const canvas: McpCanvas = { api: fakeApi([]), fileId: openFileId, isReady: () => true };
+    const handle = setup({
+      getOpenFileId: () => openFileId,
+      getCanvas: () => canvas,
+    });
+    const pending = handle("delete_elements", { ids: ["x"] });
+    openFileId = "/d/b.excalidraw";
+    await expect(pending).rejects.toThrow("changed");
   });
 });

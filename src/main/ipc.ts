@@ -327,7 +327,7 @@ type Deps = {
     reason: UnsavedReason,
   ) => Promise<UnsavedChoice>;
   getSettings: () => AppSettings;
-  updateSettings: (update: SettingsUpdate) => AppSettings;
+  updateSettings: (update: SettingsUpdate) => AppSettings | Promise<AppSettings>;
   getThumbnails: (ids: string[]) => Promise<ThumbnailRecord[]>;
   saveThumbnail: (record: ThumbnailRecord) => Promise<void>;
   getUpdateStatus: () => UpdateStatus;

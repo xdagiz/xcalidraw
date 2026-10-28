@@ -127,6 +127,8 @@ export const detailFor = (details: ErrorDetails): string => {
     if (details.reason === "permission-denied")
       return "The drawings folder or file is not writable.";
     if (details.reason === "disk-full") return "The disk is full. Free up space and try again.";
+    if (details.reason === "port-in-use")
+      return "Another app is using the agent port. Close it and try again.";
     if (details.reason === "watcher-failed")
       return "Changes on disk may not appear. Try reopening the folder.";
     return "Something went wrong with file access. Try again.";

@@ -55,7 +55,8 @@ export type ErrorDetails =
         | "permission-denied"
         | "disk-full"
         | "io"
-        | "watcher-failed";
+        | "watcher-failed"
+        | "port-in-use";
     }
   | { code: "CANCELLED"; reason: "user-cancelled" | "suppressed" };
 
@@ -145,6 +146,7 @@ const UNKNOWN_REASONS: ReadonlySet<string> = new Set([
   "disk-full",
   "io",
   "watcher-failed",
+  "port-in-use",
 ]);
 
 const CANCELLED_REASONS: ReadonlySet<string> = new Set(["user-cancelled", "suppressed"]);
