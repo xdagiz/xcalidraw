@@ -241,6 +241,15 @@ describe("createDrawingSession", () => {
     expect(save).not.toHaveBeenCalled();
   });
 
+  it("does not write an unchanged loaded drawing during an explicit flush", async () => {
+    const { session, save } = makeSession({
+      initialBaseline: drawingSignature([el("a")], appState(), emptyFiles),
+    });
+    session.onChange([el("a")], appState(), emptyFiles);
+    await session.flush({ explicit: true });
+    expect(save).not.toHaveBeenCalled();
+  });
+
   it("skips a repeated save after persistence succeeds", async () => {
     const { session, save } = makeSession();
     session.onChange([el("a")], appState(), emptyFiles);

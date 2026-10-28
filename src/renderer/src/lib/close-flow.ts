@@ -91,7 +91,14 @@ export const createCloseFlow = (deps: CloseFlowDeps) => async (request: WindowCl
     return;
   }
   try {
-    if (session) await session.flush({ force: true, explicit: true });
+    if (session) {
+      session.evaluateNow();
+      if (session.isDirty()) {
+        await session.flush({ force: true, explicit: true });
+      } else {
+        await session.flush({ explicit: true });
+      }
+    }
   } catch (error) {
     deps.reportError(error, "save");
     deps.windowApi.cancelQuit(request.requestId);
