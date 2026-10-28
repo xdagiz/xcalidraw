@@ -85,9 +85,10 @@ const FIELD_CHECKS: Record<string, (value: unknown) => boolean> = {
   roughness: inRange(0, 2),
   opacity: inRange(0, 100),
   roundness: (value) =>
-    isRecord(value) &&
-    (value.type === 1 || value.type === 2 || value.type === 3) &&
-    (value.value === undefined || isFiniteNumber(value.value)),
+    value === null ||
+    (isRecord(value) &&
+      (value.type === 1 || value.type === 2 || value.type === 3) &&
+      (value.value === undefined || isFiniteNumber(value.value))),
 };
 
 export const updateFieldError = (changes: Record<string, unknown>) => {
