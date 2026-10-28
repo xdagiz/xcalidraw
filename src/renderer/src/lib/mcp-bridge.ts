@@ -84,6 +84,10 @@ const FIELD_CHECKS: Record<string, (value: unknown) => boolean> = {
   strokeStyle: oneOf("solid", "dashed", "dotted"),
   roughness: inRange(0, 2),
   opacity: inRange(0, 100),
+  roundness: (value) =>
+    isRecord(value) &&
+    (value.type === 1 || value.type === 2 || value.type === 3) &&
+    (value.value === undefined || isFiniteNumber(value.value)),
 };
 
 export const updateFieldError = (changes: Record<string, unknown>) => {
@@ -173,6 +177,12 @@ export const summarizeElements = (elements: readonly ExcalidrawElement[]) =>
         height: round(element.height),
         strokeColor: element.strokeColor,
       };
+      if (element.roundness) {
+        summary.roundness = element.roundness;
+      }
+      if (element.roughness !== 0) {
+        summary.roughness = element.roughness;
+      }
       if (element.backgroundColor !== "transparent") {
         summary.backgroundColor = element.backgroundColor;
       }
