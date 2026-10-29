@@ -267,6 +267,16 @@ describe("files", () => {
     await expect(readDrawingFile("notes/sub/b.excalidraw")).resolves.toBe(SCENE);
   });
 
+  it("normalizes decomposed source names when choosing a copy name", async () => {
+    const sourceName = "cafe\u0301.excalidraw";
+    await writeFile(path.join(ctx.root, sourceName), SCENE);
+    await writeFile(path.join(ctx.root, "café copy.excalidraw"), SCENE);
+
+    const copied = await copyEntry(sourceName, null);
+
+    expect(copied.map((entry) => entry.id)).toEqual(["café copy 2.excalidraw"]);
+  });
+
   it("removes the new folder when a copy fails midway", async () => {
     await mkdir(path.join(ctx.root, "src"));
     await writeFile(path.join(ctx.root, "src", "a.excalidraw"), SCENE);

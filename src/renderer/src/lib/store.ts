@@ -312,7 +312,15 @@ export const useStore = create<State>((set, get) => {
       }
     }
 
-    const { entries, openFileId, dirtyById, rawDirtyById, recentFileIds, switcherFileIds } = get();
+    const {
+      entries,
+      openFileId,
+      dirtyById,
+      rawDirtyById,
+      recentFileIds,
+      switcherFileIds,
+      externalConflict,
+    } = get();
     const next = applySubtreeRemap(
       { entries, openFileId, dirtyById, rawDirtyById },
       oldId,
@@ -340,6 +348,9 @@ export const useStore = create<State>((set, get) => {
       dirtyById: next.dirtyById,
       rawDirtyById: next.rawDirtyById,
       homeReturnFileId: remapNullableId(get().homeReturnFileId, oldId, entry.id),
+      externalConflict: externalConflict
+        ? { ...externalConflict, fileId: remapId(externalConflict.fileId, oldId, entry.id) }
+        : null,
       ...(recentChanged ? { recentFileIds: nextRecentFileIds } : {}),
       ...(switcherChanged ? { switcherFileIds: nextSwitcherFileIds } : {}),
       error: null,

@@ -914,7 +914,7 @@ const reserveCopyLeaf = async (
   for (let guard = 0; guard < 1000; guard += 1) {
     const candidate = nextCopyName(
       [...taken].map((listedName) => ({ name: listedName })),
-      sourceName,
+      sourceName.normalize("NFC"),
       kind,
     );
     const destAbs = path.join(parentAbs, candidate);

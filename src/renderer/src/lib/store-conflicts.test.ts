@@ -345,6 +345,11 @@ describe("moveEntry", () => {
       openFileId: "notes/a.excalidraw",
       dirtyById: { "notes/b.excalidraw": true },
       recentFileIds: ["notes/a.excalidraw"],
+      externalConflict: {
+        type: "changed",
+        fileId: "notes/a.excalidraw",
+        diskModifiedAt: 200,
+      },
       homeReturnFileId: "notes/a.excalidraw",
     });
 
@@ -355,6 +360,11 @@ describe("moveEntry", () => {
     expect(useStore.getState().openFileId).toBe("archive/notes/a.excalidraw");
     expect(useStore.getState().dirtyById).toEqual({ "archive/notes/b.excalidraw": true });
     expect(useStore.getState().recentFileIds).toEqual(["archive/notes/a.excalidraw"]);
+    expect(useStore.getState().externalConflict).toEqual({
+      type: "changed",
+      fileId: "archive/notes/a.excalidraw",
+      diskModifiedAt: 200,
+    });
     expect(useStore.getState().homeReturnFileId).toBe("archive/notes/a.excalidraw");
     expect(set).toHaveBeenCalledWith("lastOpenedFileId", "archive/notes/a.excalidraw");
     expect(useStore.getState().entries.map((item) => item.id)).toEqual([
