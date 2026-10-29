@@ -201,6 +201,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const sceneLoadCancelRef = useRef<(() => void) | null>(null);
   const loadedFileIdRef = useRef<string | null | undefined>(undefined);
   const loadedGenerationRef = useRef(editorGeneration);
+  const retargetedFileIdRef = useRef<string | null>(null);
   const seededSceneApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const [sceneSwitcher] = useState(createSceneSwitchController);
   const [scratch] = useState(() =>
@@ -420,7 +421,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   }, [fileId, scratch]);
 
   const loadScene = useCallback(
-    (force = false) => {
+    (force = false, preserveSession = false) => {
       sceneLoadCancelRef.current?.();
       sceneLoadCancelRef.current = null;
 
@@ -442,8 +443,13 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         return undefined;
       }
 
-      const canvasSeeded = scratch.isCanvasSeeded(fileId);
-      if (!force && canvasSeeded && seededSceneApiRef.current === excalidrawApi) {
+      const canvasSeeded = preserveSession || scratch.isCanvasSeeded(fileId);
+      if (
+        !force &&
+        !preserveSession &&
+        canvasSeeded &&
+        seededSceneApiRef.current === excalidrawApi
+      ) {
         // Keep the seeded scene only while this exact editor instance owns it.
         sceneLoadingRef.current = false;
         return undefined;
@@ -483,6 +489,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
               files: drawing.files ?? {},
             });
             if (!isCurrent() || useStore.getState().openFileId !== fileId) return;
+            if (retargetedFileIdRef.current === fileId) retargetedFileIdRef.current = null;
             if (canvasSeeded) seededSceneApiRef.current = excalidrawApi;
             sceneLoadingRef.current = false;
             excalidrawApi.updateScene({
@@ -514,6 +521,8 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   );
 
   useLayoutEffect(() => {
+    let preserveSession = fileId !== null && retargetedFileIdRef.current === fileId;
+    let keepCurrentScene = false;
     const bound = scratch.getState();
     if (
       fileId !== null &&
@@ -524,19 +533,25 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
     ) {
       loadedGenerationRef.current = editorGeneration;
       loadedFileIdRef.current = fileId;
-      return;
+      if (excalidrawApi !== null && !sceneLoadingRef.current) {
+        retargetedFileIdRef.current = null;
+        keepCurrentScene = true;
+      } else {
+        retargetedFileIdRef.current = fileId;
+        preserveSession = true;
+      }
     }
 
     const generationChanged = loadedGenerationRef.current !== editorGeneration;
     loadedGenerationRef.current = editorGeneration;
     const fileChanged = loadedFileIdRef.current !== fileId;
     loadedFileIdRef.current = fileId;
-    loadScene(generationChanged && !fileChanged);
+    if (!keepCurrentScene) loadScene(generationChanged && !fileChanged, preserveSession);
     return () => {
       sceneLoadCancelRef.current?.();
       sceneLoadCancelRef.current = null;
     };
-  }, [editorGeneration, fileId, loadScene]);
+  }, [editorGeneration, excalidrawApi, fileId, loadScene, scratch]);
 
   useEffect(() => {
     if (!isLoadingDrawings) return;
