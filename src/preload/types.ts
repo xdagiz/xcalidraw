@@ -7,9 +7,6 @@ import type {
   FileEntry,
   FilesChangedEvent,
   LibraryReturnedEvent,
-  RemoteCommand,
-  RemoteInfo,
-  RemoteState,
   RendererStoreKey,
   SettingsUpdate,
   StoreType,
@@ -80,11 +77,6 @@ export interface NativeApi {
     onRequest: (
       handler: (name: string, args: Record<string, unknown>) => Promise<unknown>,
     ) => () => void;
-  };
-  remote: {
-    update: (state: RemoteState) => void;
-    onInfo: (cb: (info: RemoteInfo) => void) => () => void;
-    onCommand: (cb: (command: RemoteCommand) => void) => () => void;
   };
   contextMenu: {
     show: (items: ContextMenuItem[], x: number, y: number) => Promise<string | null>;

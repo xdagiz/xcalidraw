@@ -16,13 +16,11 @@ import {
   Minimize2Icon,
   MoonIcon,
   PlusIcon,
-  SmartphoneIcon,
   SunIcon,
   WandIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { renderSVG } from "uqr";
 
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/hooks/use-theme";
@@ -272,94 +270,6 @@ type SavedView = Pick<
 >;
 
 const BAR_IDLE_MS = 2500;
-const REMOTE_IMAGE_SIZE = 800;
-
-type RemoteStatus = { url: string } | { error: string } | "starting" | null;
-
-// Phone remote: reports the current slide while on and follows steps sent back.
-const useRemote = (
-  api: ExcalidrawImperativeAPI,
-  slides: readonly ExcalidrawFrameElement[],
-  index: number,
-  setIndex: (update: (current: number) => number) => void,
-) => {
-  const [status, setStatus] = useState<RemoteStatus>(null);
-  const on = status !== null;
-
-  useEffect(() => {
-    if (!on) return undefined;
-    const offInfo = window.api.remote.onInfo(setStatus);
-    const offCommand = window.api.remote.onCommand((command) =>
-      setIndex((current) =>
-        "index" in command
-          ? Math.min(command.index, slides.length - 1)
-          : applyStep(current, command.step, slides.length),
-      ),
-    );
-    return () => {
-      offInfo();
-      offCommand();
-    };
-  }, [on, setIndex, slides.length]);
-
-  useEffect(() => {
-    if (!on) return undefined;
-    let cancelled = false;
-    const names = slides.map(slideName);
-    const slide = slides[index];
-    void (async () => {
-      const canvas = slide
-        ? await exportToCanvas({
-            elements: api.getSceneElements(),
-            files: api.getFiles(),
-            exportingFrame: slide,
-            maxWidthOrHeight: REMOTE_IMAGE_SIZE,
-            appState: { exportBackground: true, viewBackgroundColor: "#ffffff" },
-          })
-        : null;
-      if (cancelled) return;
-      window.api.remote.update({
-        active: true,
-        index,
-        names,
-        image: canvas?.toDataURL("image/jpeg", 0.7) ?? null,
-      });
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [api, on, slides, index]);
-
-  useEffect(() => () => window.api.remote.update({ active: false }), []);
-
-  const toggle = () => setStatus((current) => (current === null ? "starting" : current));
-  return { status, toggle };
-};
-
-function RemotePanel({ status }: { status: Exclude<RemoteStatus, null> }) {
-  const [copied, setCopied] = useState(false);
-  if (status === "starting") return <p className="text-sm">Starting the remote…</p>;
-  if ("error" in status) return <p className="text-sm text-[#c92a2a]">{status.error}</p>;
-  const qr = `data:image/svg+xml;utf8,${encodeURIComponent(renderSVG(status.url))}`;
-  return (
-    <div className="flex flex-col gap-3">
-      <div>
-        <p className="font-semibold">Remote control</p>
-        <p className="text-muted-foreground text-sm">
-          Scan with your phone to change slides. It needs to be on the same Wi-Fi.
-        </p>
-      </div>
-      <img src={qr} alt="QR code for the remote control link" className="mx-auto size-44" />
-      <Button
-        onClick={() => {
-          void navigator.clipboard.writeText(status.url).then(() => setCopied(true));
-        }}
-      >
-        {copied ? "Link copied!" : "Copy remote control link"}
-      </Button>
-    </div>
-  );
-}
 
 export function Presenter({
   api,
@@ -382,8 +292,6 @@ export function Presenter({
   const [fullscreen, setFullscreen] = useState(false);
   const [barHidden, setBarHidden] = useState(false);
   const [idle, setIdle] = useState(false);
-  const [remoteOpen, setRemoteOpen] = useState(false);
-  const remote = useRemote(api, slides, index, setIndex);
   const leftFullscreenAt = useRef(0);
   const overBar = useRef(false);
 
@@ -518,7 +426,7 @@ export function Presenter({
     return () => window.removeEventListener("keydown", handleKey, true);
   }, [onExit, slides.length, toggleFullscreen]);
 
-  const showBar = !barHidden && (!idle || remoteOpen);
+  const showBar = !barHidden && !idle;
 
   const toggleLaser = () => {
     api.setActiveTool({ type: laser ? "hand" : "laser" });
@@ -547,11 +455,6 @@ export function Presenter({
           showBar ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       >
-        {remoteOpen && remote.status !== null && (
-          <div className="bg-background pointer-events-auto w-72 rounded-xl border p-4 shadow-md">
-            <RemotePanel status={remote.status} />
-          </div>
-        )}
         <div
           onPointerEnter={() => {
             overBar.current = true;
@@ -601,18 +504,6 @@ export function Presenter({
             onClick={toggleTheme}
           >
             {theme === "dark" ? <SunIcon /> : <MoonIcon />}
-          </Button>
-          <Button
-            variant={remoteOpen ? "secondary" : "ghost"}
-            size="icon-sm"
-            title="Phone remote"
-            aria-pressed={remoteOpen}
-            onClick={() => {
-              remote.toggle();
-              setRemoteOpen(!remoteOpen);
-            }}
-          >
-            <SmartphoneIcon />
           </Button>
           <Button
             variant="ghost"

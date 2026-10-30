@@ -334,10 +334,3 @@ export type McpRequest = {
 export type McpResponse = { id: string; result: unknown } | { id: string; error: string };
 
 export const MCP_PORT = 29180;
-
-// Phone remote for presentations: the window reports slides, the phone sends steps back.
-export type RemoteState =
-  | { active: false }
-  | { active: true; index: number; names: string[]; image: string | null };
-export type RemoteInfo = { url: string } | { error: string };
-export type RemoteCommand = { step: "next" | "previous" } | { index: number };
