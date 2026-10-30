@@ -843,18 +843,24 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
             </WelcomeShared>
           )}
           {editorReady && <EditorCommandPalette />}
-          {excalidrawApi && (
-            <DefaultSidebar>
-              <DefaultSidebar.TabTriggers>
-                <Sidebar.TabTrigger tab={PRESENTATION_TAB} title="Presentation">
-                  <PresentationIcon size={16} />
-                </Sidebar.TabTrigger>
-              </DefaultSidebar.TabTriggers>
-              <Sidebar.Tab tab={PRESENTATION_TAB}>
-                <PresentationPanel api={excalidrawApi} onStart={startPresenting} />
-              </Sidebar.Tab>
-            </DefaultSidebar>
-          )}
+          <DefaultSidebar>
+            {excalidrawApi && (
+              <>
+                <DefaultSidebar.TabTriggers>
+                  <Sidebar.TabTrigger
+                    tab={PRESENTATION_TAB}
+                    title="Presentation"
+                    data-prevent-outside-click={true}
+                  >
+                    <PresentationIcon size={16} />
+                  </Sidebar.TabTrigger>
+                </DefaultSidebar.TabTriggers>
+                <Sidebar.Tab tab={PRESENTATION_TAB}>
+                  <PresentationPanel api={excalidrawApi} onStart={startPresenting} />
+                </Sidebar.Tab>
+              </>
+            )}
+          </DefaultSidebar>
         </Excalidraw>
       </ErrorBoundary>
       {presenting && excalidrawApi && (
