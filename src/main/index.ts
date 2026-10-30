@@ -41,6 +41,7 @@ import {
 } from "./ipc";
 import { initLogger, log } from "./logger";
 import { applyMcpSetting } from "./mcp";
+import "./remote";
 import { applyTheme, getSettings, setSettings, applyWindowBgColor } from "./settings";
 import { getLastOpenedFileId, getRecentFileIds } from "./store";
 import { pruneThumbnailCache, readThumbnailRecords, writeThumbnailRecord } from "./thumbnails";

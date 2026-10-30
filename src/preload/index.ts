@@ -20,6 +20,9 @@ import {
   LIBRARY_RETURNED,
   MCP_REQUEST,
   MCP_RESPONSE,
+  REMOTE_COMMAND,
+  REMOTE_INFO,
+  REMOTE_STATE,
   SETTINGS_GET,
   SETTINGS_SET,
   STORE_DELETE,
@@ -49,6 +52,8 @@ import type {
   FilesChangedEvent,
   LibraryReturnedEvent,
   McpRequest,
+  RemoteCommand,
+  RemoteInfo,
   UpdateStatus,
   WatcherErrorEvent,
   WindowCloseRequest,
@@ -176,6 +181,19 @@ const api: NativeApi = {
       };
       ipcRenderer.on(MCP_REQUEST, listener);
       return () => ipcRenderer.removeListener(MCP_REQUEST, listener);
+    },
+  },
+  remote: {
+    update: (state) => ipcRenderer.send(REMOTE_STATE, state),
+    onInfo: (cb) => {
+      const listener = (_event: Electron.IpcRendererEvent, info: RemoteInfo) => cb(info);
+      ipcRenderer.on(REMOTE_INFO, listener);
+      return () => ipcRenderer.removeListener(REMOTE_INFO, listener);
+    },
+    onCommand: (cb) => {
+      const listener = (_event: Electron.IpcRendererEvent, command: RemoteCommand) => cb(command);
+      ipcRenderer.on(REMOTE_COMMAND, listener);
+      return () => ipcRenderer.removeListener(REMOTE_COMMAND, listener);
     },
   },
   contextMenu: {

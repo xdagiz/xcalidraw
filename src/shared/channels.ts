@@ -40,3 +40,6 @@ export const UPDATES_STATUS = "updates:status";
 export const UPDATES_STATUS_GET = "updates:status:get";
 export const MCP_REQUEST = "mcp:request";
 export const MCP_RESPONSE = "mcp:response";
+export const REMOTE_STATE = "remote:state";
+export const REMOTE_INFO = "remote:info";
+export const REMOTE_COMMAND = "remote:command";
