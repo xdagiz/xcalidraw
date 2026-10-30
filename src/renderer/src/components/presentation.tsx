@@ -193,7 +193,7 @@ export function PresentationPanel({
   // Styled with Excalidraw's own tokens so the tab matches the library tab next to it.
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center justify-between px-3 pb-3">
+      <div className="flex shrink-0 items-center justify-between px-3 py-6">
         <h2 className="text-lg font-bold text-(--color-primary)">Presentation</h2>
         <button
           type="button"
@@ -224,7 +224,7 @@ export function PresentationPanel({
                 type="button"
                 aria-label={`Go to ${slideName(slide, index)}`}
                 onClick={() => goTo(slide)}
-                className="flex aspect-video w-full items-center justify-center bg-white outline-none"
+                className="flex aspect-video w-full items-center justify-center bg-[var(--excalidraw-canvas-bg,var(--background))] outline-none"
               >
                 {thumbnails[slide.id] && (
                   <img src={thumbnails[slide.id]} alt="" className="size-full object-contain" />
@@ -261,12 +261,12 @@ export function PresentationPanel({
           ))
         )}
       </div>
-      <div className="shrink-0 px-3 pt-1">
+      <div className="before:bg-sidebar-border relative flex shrink-0 items-center justify-center gap-2.5 px-3 pt-4 before:absolute before:-top-px before:h-px before:w-[calc(100%_-_1.5rem)] before:content-['']">
         <button
           type="button"
           onClick={onStart}
           disabled={slides.length === 0}
-          className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-(--color-primary) text-sm font-medium text-white hover:bg-(--color-primary-darker) disabled:opacity-50"
+          className="relative flex h-(--lg-button-size) flex-1 items-center justify-center gap-1 overflow-hidden rounded-(--border-radius-lg) bg-(--color-primary) text-center text-xs font-semibold whitespace-nowrap text-white no-underline! hover:bg-(--color-brand-hover) active:bg-(--color-brand-active) disabled:opacity-50 dark:text-gray-100"
         >
           <PlayIcon size={16} />
           Start presentation
@@ -471,12 +471,12 @@ export function Presenter({
       {/* Fade everything around the current slide, like Excalidraw+. */}
       {slide && (
         <div
-          className={`absolute ${
-            theme === "dark"
-              ? "shadow-[0_0_0_200vmax_rgb(18_18_18/0.75)]"
-              : "shadow-[0_0_0_200vmax_rgb(255_255_255/0.75)]"
-          }`}
-          style={slideRect(slide, view)}
+          className="absolute"
+          style={{
+            ...slideRect(slide, view),
+            boxShadow:
+              "0 0 0 200vmax color-mix(in srgb, var(--excalidraw-canvas-bg, var(--background)) 75%, transparent)",
+          }}
         />
       )}
       <div
@@ -542,14 +542,10 @@ export function Presenter({
           >
             {fullscreen ? <Minimize2Icon /> : <Maximize2Icon />}
           </Button>
-          <button
-            type="button"
-            onClick={onExit}
-            className="ml-1 flex h-8 items-center gap-2 rounded-lg bg-[#ffe3e3] px-3 text-sm font-medium text-[#c92a2a] hover:bg-[#ffc9c9] dark:bg-[#c92a2a]/25 dark:text-[#ffa8a8]"
-          >
+          <Button variant="destructive" size="sm" onClick={onExit} className="ml-1 gap-2 px-3">
             <span className="size-3.5 rounded-[3px] bg-current" />
             End presentation
-          </button>
+          </Button>
         </div>
       </div>
     </div>
