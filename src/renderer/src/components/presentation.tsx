@@ -58,28 +58,34 @@ const useSlides = (api: ExcalidrawImperativeAPI) => {
       initialAppState.viewBackgroundColor,
     );
 
+    let latest = 0;
     const refresh = async () => {
+      const run = ++latest;
       const elements = api.getSceneElements();
       const frames = slidesOf(elements);
       setSlides(frames);
       const appState = api.getAppState();
-      const rendered = await Promise.all(
-        frames.map(async (frame) => {
-          const canvas = await exportToCanvas({
-            elements,
-            files: api.getFiles(),
-            exportingFrame: frame,
-            maxWidthOrHeight: THUMBNAIL_SIZE,
-            appState: {
-              exportBackground: true,
-              viewBackgroundColor: appState.viewBackgroundColor,
-              exportWithDarkMode: appState.theme === "dark",
-            },
-          });
-          return [frame.id, canvas.toDataURL()] as const;
-        }),
-      );
-      if (!cancelled) setThumbnails(Object.fromEntries(rendered));
+      try {
+        const rendered = await Promise.all(
+          frames.map(async (frame) => {
+            const canvas = await exportToCanvas({
+              elements,
+              files: api.getFiles(),
+              exportingFrame: frame,
+              maxWidthOrHeight: THUMBNAIL_SIZE,
+              appState: {
+                exportBackground: true,
+                viewBackgroundColor: appState.viewBackgroundColor,
+                exportWithDarkMode: appState.theme === "dark",
+              },
+            });
+            return [frame.id, canvas.toDataURL()] as const;
+          }),
+        );
+        if (!cancelled && run === latest) setThumbnails(Object.fromEntries(rendered));
+      } catch (error) {
+        console.error("Failed to render slide thumbnails:", error);
+      }
     };
 
     const unsubscribe = api.onChange((elements, appState) => {
@@ -359,6 +365,7 @@ export function Presenter({
     const container = containerRef.current;
     if (!container) return undefined;
     const handleDoubleClick = (event: MouseEvent) => {
+      if (event.target instanceof Element && event.target.closest("[data-presenter-bar]")) return;
       const { scrollX, scrollY, zoom } = api.getAppState();
       const bounds = container.getBoundingClientRect();
       const x = (event.clientX - bounds.left) / zoom.value - scrollX;
@@ -410,13 +417,19 @@ export function Presenter({
 
   useEffect(() => {
     fit(true);
-    const handleResize = () =>
-      requestAnimationFrame(() => {
+    let frame = 0;
+    const handleResize = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
         api.refresh();
         fit(false);
       });
+    };
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", handleResize);
+    };
   }, [api, fit]);
 
   useEffect(
@@ -485,6 +498,7 @@ export function Presenter({
         }`}
       >
         <div
+          data-presenter-bar
           onPointerEnter={() => {
             overBar.current = true;
           }}
