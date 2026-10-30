@@ -1,5 +1,14 @@
 export type SceneSwitchGuard = () => boolean;
 
+export type RetargetedSceneState = {
+  apiAvailable: boolean;
+  sceneLoading: boolean;
+  sceneFailed: boolean;
+};
+
+export const shouldKeepRetargetedScene = (state: RetargetedSceneState) =>
+  state.apiAvailable && !state.sceneLoading && !state.sceneFailed;
+
 export type SceneSwitchController = {
   start<T>(
     load: () => Promise<T>,

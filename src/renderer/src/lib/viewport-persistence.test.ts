@@ -63,6 +63,31 @@ describe("createViewportPersistence", () => {
     expect(await persistence.get(root, "scratch.excalidraw")).toEqual(viewport);
   });
 
+  it("persists a viewport that is already cached but missing from storage", async () => {
+    const cache = createViewportCache();
+    const { persistence } = makePersistence();
+    const recordViewport = createViewportRecorder(cache, persistence);
+    cache.set(root, "a.excalidraw", viewport);
+
+    await recordViewport(root, "a.excalidraw", viewport);
+    await persistence.flush();
+
+    expect(await persistence.get(root, "a.excalidraw")).toEqual(viewport);
+  });
+
+  it("does not rewrite an unchanged viewport", async () => {
+    vi.useFakeTimers();
+    const { persistence, set } = makePersistence();
+    await persistence.set(root, "a.excalidraw", viewport);
+    await persistence.flush();
+    expect(set).toHaveBeenCalledOnce();
+
+    await persistence.set(root, "a.excalidraw", { ...viewport });
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(set).toHaveBeenCalledOnce();
+  });
+
   it("flushes pending writes immediately", async () => {
     vi.useFakeTimers();
     const { persistence, set } = makePersistence();

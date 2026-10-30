@@ -169,7 +169,7 @@ export type UnsavedReason = "quit" | "switch";
 export type UnsavedChoice = "save" | "discard" | "cancel";
 export type WindowCloseRequest = {
   requestId: number;
-  kind: "check" | "flush";
+  kind: "check" | "flush" | "flush-viewports";
 };
 
 export type StoreType = {

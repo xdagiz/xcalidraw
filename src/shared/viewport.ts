@@ -44,6 +44,9 @@ export const isValidViewport = (value: unknown): value is Viewport => {
   );
 };
 
+export const viewportsEqual = (a: Viewport, b: Viewport) =>
+  a.scrollX === b.scrollX && a.scrollY === b.scrollY && a.zoom === b.zoom;
+
 export const viewportStoreFrom = (value: unknown): ViewportStore | null => {
   let parsed: unknown = value;
   if (typeof value === "string") {

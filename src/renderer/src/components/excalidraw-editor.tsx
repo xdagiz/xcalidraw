@@ -55,7 +55,7 @@ import { libraryErrorToastId, saveErrorToastId, toAppError, type AppError } from
 import { createDrawingSession, drawingSignature } from "@/lib/drawing-session";
 import { createLibraryPersistenceAdapter, defaultLibraryStorage } from "@/lib/library-persistence";
 import { setMcpCanvas } from "@/lib/mcp-bridge";
-import { createSceneSwitchController } from "@/lib/scene-switching";
+import { createSceneSwitchController, shouldKeepRetargetedScene } from "@/lib/scene-switching";
 import { createScratchController } from "@/lib/scratch-session";
 import { sessionOwner } from "@/lib/session-owner";
 import { useStore } from "@/lib/store";
@@ -202,6 +202,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
 
   const editorRef = useRef<HTMLDivElement | null>(null);
   const sceneLoadingRef = useRef(false);
+  const sceneFailedFileIdRef = useRef<string | null>(null);
   const sceneLoadCancelRef = useRef<(() => void) | null>(null);
   const loadedFileIdRef = useRef<string | null | undefined>(undefined);
   const loadedGenerationRef = useRef(editorGeneration);
@@ -332,7 +333,10 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
     setMcpCanvas({
       api: excalidrawApi,
       fileId,
-      isReady: () => !sceneLoadingRef.current && !excalidrawApi.getAppState().isLoading,
+      isReady: () =>
+        !sceneLoadingRef.current &&
+        sceneFailedFileIdRef.current === null &&
+        !excalidrawApi.getAppState().isLoading,
     });
     return () => setMcpCanvas(null);
   }, [excalidrawApi, fileId]);
@@ -436,6 +440,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
       if (!excalidrawApi) return undefined;
 
       sceneLoadingRef.current = true;
+      sceneFailedFileIdRef.current = null;
       const exitPresentation = presenterExitRef.current;
       if (exitPresentation) {
         presenterExitRef.current = null;
@@ -506,6 +511,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
             if (retargetedFileIdRef.current === fileId) retargetedFileIdRef.current = null;
             if (canvasSeeded) seededSceneApiRef.current = excalidrawApi;
             sceneLoadingRef.current = false;
+            sceneFailedFileIdRef.current = null;
             excalidrawApi.updateScene({
               appState: { isLoading: false },
               captureUpdate: CaptureUpdateAction.NEVER,
@@ -518,6 +524,8 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
 
             console.error("Failed to load drawing:", error);
             scratch.getSession()?.invalidate();
+            sceneFailedFileIdRef.current = fileId;
+            sceneLoadingRef.current = false;
             excalidrawApi.updateScene({
               appState: { isLoading: false },
               captureUpdate: CaptureUpdateAction.NEVER,
@@ -545,9 +553,22 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
       bound.session === sessionOwner.getSession(fileId) &&
       scratch.retargetFile(bound.fileId, fileId)
     ) {
+      const sceneFailed = sceneFailedFileIdRef.current === bound.fileId;
       loadedGenerationRef.current = editorGeneration;
       loadedFileIdRef.current = fileId;
-      if (excalidrawApi !== null && !sceneLoadingRef.current) {
+      if (sceneFailed) {
+        sceneFailedFileIdRef.current = fileId;
+        setLoadError((current) =>
+          current?.fileId === bound.fileId ? { ...current, fileId } : current,
+        );
+      }
+      if (
+        shouldKeepRetargetedScene({
+          apiAvailable: excalidrawApi !== null,
+          sceneLoading: sceneLoadingRef.current,
+          sceneFailed,
+        })
+      ) {
         retargetedFileIdRef.current = null;
         keepCurrentScene = true;
       } else {
@@ -678,6 +699,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
       if (sceneLoadingRef.current) return;
 
       if (fileId !== null) {
+        if (loadedFileIdRef.current !== fileId || sceneFailedFileIdRef.current === fileId) return;
         if (!appState.isLoading) {
           const rootPath = drawingsPath;
           const viewport = viewportOf(appState);
@@ -787,6 +809,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
           initialData={null}
           onChange={handleChange}
           aiEnabled={false}
+          handleKeyboardGlobally
           UIOptions={{
             canvasActions: {
               loadScene: false,

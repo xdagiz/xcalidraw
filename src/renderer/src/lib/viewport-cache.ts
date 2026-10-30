@@ -1,4 +1,9 @@
-import { isValidViewport, MAX_VIEWPORT_ENTRIES, viewportKey } from "@shared/viewport";
+import {
+  isValidViewport,
+  MAX_VIEWPORT_ENTRIES,
+  viewportKey,
+  viewportsEqual,
+} from "@shared/viewport";
 import type { Viewport } from "@shared/viewport";
 
 import { isInsideSubtree, remapId } from "./entry-tree";
@@ -45,12 +50,7 @@ export const createViewportCache = (): ViewportCache => {
         return false;
       }
       const previous = entries.get(viewportKey(rootPath, fileId))?.viewport;
-      if (
-        previous &&
-        previous.scrollX === viewport.scrollX &&
-        previous.scrollY === viewport.scrollY &&
-        previous.zoom === viewport.zoom
-      ) {
+      if (previous && viewportsEqual(previous, viewport)) {
         return false;
       }
       setEntry(rootPath, fileId, viewport);

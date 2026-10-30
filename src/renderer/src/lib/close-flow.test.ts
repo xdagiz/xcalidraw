@@ -126,6 +126,37 @@ describe("close flow", () => {
     expect(flow.windowApi.cancelQuit).not.toHaveBeenCalled();
   });
 
+  it("flushes viewports without saving when the user discards changes", async () => {
+    const flow = setup();
+    const session = flow.adoptSession();
+    session.isDirty.mockReturnValue(true);
+
+    await flow.handler({ kind: "flush-viewports", requestId: 42 });
+
+    expect(flow.flushViewports).toHaveBeenCalledOnce();
+    expect(flow.windowApi.flushStarted).toHaveBeenCalledExactlyOnceWith(42);
+    expect(session.evaluateNow).not.toHaveBeenCalled();
+    expect(session.flush).not.toHaveBeenCalled();
+    expect(flow.windowApi.close).toHaveBeenCalledExactlyOnceWith(42);
+    expect(flow.windowApi.cancelQuit).not.toHaveBeenCalled();
+    expect(isCloseHandshakeActive()).toBe(false);
+  });
+
+  it("closes after a viewport flush failure when the user discards changes", async () => {
+    const flow = setup();
+    flow.flushViewports.mockRejectedValueOnce(new Error("disk full"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      await flow.handler({ kind: "flush-viewports", requestId: 42 });
+
+      expect(flow.windowApi.close).toHaveBeenCalledExactlyOnceWith(42);
+      expect(consoleError).toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it("cancels quit when captured strokes have no owning session", async () => {
     const flow = setup();
     flow.state.scratchUnsaved = true;

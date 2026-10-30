@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { createSceneSwitchController } from "./scene-switching";
+import { createSceneSwitchController, shouldKeepRetargetedScene } from "./scene-switching";
 
 const deferred = <T>() => {
   const resolvers: {
@@ -22,6 +22,26 @@ const flushPromises = async () => {
   await Promise.resolve();
   await Promise.resolve();
 };
+
+describe("shouldKeepRetargetedScene", () => {
+  const ready = { apiAvailable: true, sceneLoading: false, sceneFailed: false };
+
+  it("keeps a successfully loaded scene across a rename", () => {
+    expect(shouldKeepRetargetedScene(ready)).toBe(true);
+  });
+
+  it("reloads the renamed file when the old load failed", () => {
+    expect(shouldKeepRetargetedScene({ ...ready, sceneFailed: true })).toBe(false);
+  });
+
+  it("reloads while the scene is still loading", () => {
+    expect(shouldKeepRetargetedScene({ ...ready, sceneLoading: true })).toBe(false);
+  });
+
+  it("reloads when no editor instance is available yet", () => {
+    expect(shouldKeepRetargetedScene({ ...ready, apiAvailable: false })).toBe(false);
+  });
+});
 
 describe("createSceneSwitchController", () => {
   it("only applies the latest completed scene request", async () => {

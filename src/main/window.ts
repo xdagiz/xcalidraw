@@ -25,7 +25,7 @@ type QuitCallbacks = {
 type CloseState = {
   awaitingRenderer: boolean;
   requestId: number;
-  kind: "check" | "flush" | null;
+  kind: "check" | "flush" | "flush-viewports" | null;
   timer: NodeJS.Timeout | null;
   lastArmedMs: number;
   silentDialogOpen: boolean;
@@ -217,7 +217,9 @@ const onRendererSilent = async (win: BrowserWindow) => {
     const detail =
       state.kind === "flush"
         ? "The window stopped responding while xcalidraw was saving your changes. Close it anyway, or keep waiting for it to recover."
-        : "The window stopped responding while xcalidraw was checking for unsaved changes. Close it anyway, or keep waiting for it to recover.";
+        : state.kind === "flush-viewports"
+          ? "The window stopped responding while xcalidraw was saving your canvas view. Close it anyway, or keep waiting for it to recover."
+          : "The window stopped responding while xcalidraw was checking for unsaved changes. Close it anyway, or keep waiting for it to recover.";
     const { response } = await dialog.showMessageBox(win, {
       type: "warning",
       buttons: ["Close anyway", "Keep waiting"],
@@ -424,7 +426,13 @@ export const onDirtyState = (
     }
 
     if (choice === "discard") {
-      closeWindow(win);
+      state.kind = "flush-viewports";
+      const request: WindowCloseRequest = {
+        requestId: state.requestId,
+        kind: "flush-viewports",
+      };
+      sendToRenderer(win, WINDOW_WILL_CLOSE, request);
+      armSilentTimer(win, FLUSH_SILENCE_TIMEOUT_MS);
       return;
     }
 
@@ -442,7 +450,12 @@ export const onFlushStarted = (win: BrowserWindow, requestId: number) => {
     return;
   }
 
-  if (!isCurrentCloseRequest(win, requestId) || state.kind !== "flush") return;
+  if (
+    !isCurrentCloseRequest(win, requestId) ||
+    (state.kind !== "flush" && state.kind !== "flush-viewports")
+  ) {
+    return;
+  }
 
   armSilentTimer(win, osShutdown ? SHUTDOWN_FLUSH_WRITE_TIMEOUT_MS : FLUSH_WRITE_TIMEOUT_MS);
 };

@@ -142,6 +142,47 @@ describe("close guard", () => {
     expect(win.destroyed).toBe(true);
   });
 
+  it("flushes viewports before closing after the user discards changes", async () => {
+    const { win, browserWindow } = setupWindow();
+    mocks.showMessageBox.mockResolvedValue({ response: 1 });
+
+    win.emit("close", closeEvent());
+    const requestId = sentRequestId(win, 0);
+    closeGuard.onDirtyState(browserWindow, requestId, true, false);
+    await flushTicks();
+
+    expect(win.destroyed).toBe(false);
+    expect(win.webContents.send).toHaveBeenNthCalledWith(2, WINDOW_WILL_CLOSE, {
+      requestId,
+      kind: "flush-viewports",
+    });
+
+    closeGuard.destroyWindow(browserWindow, requestId);
+
+    expect(win.destroyed).toBe(true);
+  });
+
+  it("lets a discarded close's viewport flush outlast the silence window", async () => {
+    vi.useFakeTimers();
+    const { win, browserWindow } = setupWindow();
+    mocks.showMessageBox.mockResolvedValue({ response: 1 });
+
+    win.emit("close", closeEvent());
+    const requestId = sentRequestId(win, 0);
+    closeGuard.onDirtyState(browserWindow, requestId, true, false);
+    await flushTicks();
+    closeGuard.onFlushStarted(browserWindow, requestId);
+
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(mocks.showMessageBox).toHaveBeenCalledTimes(1);
+    expect(win.destroyed).toBe(false);
+
+    closeGuard.destroyWindow(browserWindow, requestId);
+
+    expect(win.destroyed).toBe(true);
+  });
+
   it("runs a quit callback only after the renderer approves the close", () => {
     const { win, browserWindow } = setupWindow();
     const onApproved = vi.fn(() => true);

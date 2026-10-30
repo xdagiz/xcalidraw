@@ -3,6 +3,7 @@ import {
   MAX_VIEWPORT_ENTRIES,
   MAX_VIEWPORT_STORE_BYTES,
   viewportKey,
+  viewportsEqual,
   viewportStoreFrom,
 } from "@shared/viewport";
 import type { PersistedViewport, Viewport } from "@shared/viewport";
@@ -167,8 +168,10 @@ export const createViewportPersistence = (
     },
     set: (rootPath, fileId, viewport) => {
       if (!rootPath || !fileId || !isValidViewport(viewport)) return Promise.resolve();
+      const key = viewportKey(rootPath, fileId);
       return enqueueMutation(() => {
-        const key = viewportKey(rootPath, fileId);
+        const previous = entries.get(key)?.viewport;
+        if (previous && viewportsEqual(previous, viewport)) return;
         entries.delete(key);
         entries.set(key, {
           rootPath,

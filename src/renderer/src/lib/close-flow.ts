@@ -74,6 +74,16 @@ export const createCloseFlow = (deps: CloseFlowDeps) => async (request: WindowCl
     return;
   }
 
+  if (request.kind === "flush-viewports") {
+    deps.windowApi.flushStarted(request.requestId);
+    await deps.flushViewports().catch((error: unknown) => {
+      console.error("Failed to persist viewport preferences:", error);
+    });
+    await deps.windowApi.close(request.requestId);
+    setCloseHandshakeActive(false);
+    return;
+  }
+
   deps.windowApi.flushStarted(request.requestId);
   if (deps.getState().pendingCanvasAction) {
     await deps.waitForCanvasActionSettled();

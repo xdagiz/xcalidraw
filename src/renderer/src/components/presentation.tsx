@@ -487,8 +487,6 @@ export function Presenter({
           className="absolute"
           style={{
             ...slideRect(slide, view),
-            boxShadow:
-              "0 0 0 200vmax color-mix(in srgb, var(--excalidraw-canvas-bg, var(--background)) 75%, transparent)",
           }}
         />
       )}
