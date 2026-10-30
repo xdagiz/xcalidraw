@@ -2,9 +2,18 @@ import type {
   ExcalidrawElement,
   ExcalidrawFrameElement,
 } from "@excalidraw/excalidraw/element/types";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
-import { applyStep, nextSlidePosition, slideRect, slidesOf, stepForKey } from "./presentation";
+import {
+  applyStep,
+  createPresentationExit,
+  isControlActivationKey,
+  nextSlidePosition,
+  slideRect,
+  slidesOf,
+  stepForKey,
+  thumbnailRenderKey,
+} from "./presentation";
 
 const frame = (id: string, x: number, extra: Partial<ExcalidrawFrameElement> = {}) =>
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- only the fields read here
@@ -31,6 +40,30 @@ describe("slides", () => {
 });
 
 describe("presenting", () => {
+  it("restores presentation state only once across exit paths", () => {
+    const restore = vi.fn();
+    const exit = createPresentationExit(restore);
+
+    exit();
+    exit();
+
+    expect(restore).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves keyboard activation for focused controls", () => {
+    expect(isControlActivationKey("Enter", true)).toBe(true);
+    expect(isControlActivationKey(" ", true)).toBe(true);
+    expect(isControlActivationKey("ArrowRight", true)).toBe(false);
+    expect(isControlActivationKey("Enter", false)).toBe(false);
+  });
+
+  it("refreshes thumbnails when rendering inputs change", () => {
+    const initial = thumbnailRenderKey(1, "light", "#fff");
+    expect(thumbnailRenderKey(1, "dark", "#fff")).not.toBe(initial);
+    expect(thumbnailRenderKey(1, "light", "#000")).not.toBe(initial);
+    expect(thumbnailRenderKey(2, "light", "#fff")).not.toBe(initial);
+  });
+
   it("maps keys to steps and stays within the deck", () => {
     expect(stepForKey("ArrowRight")).toBe("next");
     expect(stepForKey(" ")).toBe("next");

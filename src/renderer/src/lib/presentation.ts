@@ -27,6 +27,24 @@ export const nextSlidePosition = (
   return { x: 0, y: 0 };
 };
 
+export const isControlActivationKey = (key: string, hasInteractiveTarget: boolean) =>
+  hasInteractiveTarget && (key === "Enter" || key === " ");
+
+export const createPresentationExit = (restore: () => void) => {
+  let restored = false;
+  return () => {
+    if (restored) return;
+    restored = true;
+    restore();
+  };
+};
+
+export const thumbnailRenderKey = (
+  elementsVersion: number | string,
+  theme: string,
+  backgroundColor: string,
+) => JSON.stringify([elementsVersion, theme, backgroundColor]);
+
 export type SlideStep = "next" | "previous" | "first" | "last" | "exit";
 
 export const stepForKey = (key: string): SlideStep | null => {

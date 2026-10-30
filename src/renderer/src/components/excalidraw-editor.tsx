@@ -289,6 +289,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
   const [loadError, setLoadError] = useState<{ fileId: string; error: AppError } | null>(null);
   const [excalidrawApi, setExcalidrawApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [presenting, setPresenting] = useState(false);
+  const presenterExitRef = useRef<(() => void) | null>(null);
   const startPresenting = useCallback(() => setPresenting(true), []);
   const stopPresenting = useCallback(() => setPresenting(false), []);
 
@@ -435,6 +436,12 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
       if (!excalidrawApi) return undefined;
 
       sceneLoadingRef.current = true;
+      const exitPresentation = presenterExitRef.current;
+      if (exitPresentation) {
+        presenterExitRef.current = null;
+        exitPresentation();
+        stopPresenting();
+      }
       setLoadError((current) => (current?.fileId === fileId ? null : current));
 
       if (fileId === null) {
@@ -524,7 +531,7 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
 
       return cancel;
     },
-    [fileId, drawingsPath, excalidrawApi, scratch, sceneSwitcher],
+    [fileId, drawingsPath, excalidrawApi, scratch, sceneSwitcher, stopPresenting],
   );
 
   useLayoutEffect(() => {
@@ -864,7 +871,12 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
         </Excalidraw>
       </ErrorBoundary>
       {presenting && excalidrawApi && (
-        <Presenter api={excalidrawApi} containerRef={editorRef} onExit={stopPresenting} />
+        <Presenter
+          api={excalidrawApi}
+          containerRef={editorRef}
+          exitRef={presenterExitRef}
+          onExit={stopPresenting}
+        />
       )}
       {loadError && fileId !== null && loadError.fileId === fileId && (
         <div className="bg-background/95 absolute inset-0 z-50 flex items-center justify-center">

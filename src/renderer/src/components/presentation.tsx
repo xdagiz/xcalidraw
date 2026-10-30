@@ -19,7 +19,7 @@ import {
   SunIcon,
   WandIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -28,11 +28,14 @@ import {
   SLIDE_HEIGHT,
   SLIDE_WIDTH,
   applyStep,
+  createPresentationExit,
+  isControlActivationKey,
   nextSlidePosition,
   slideName,
   slideRect,
   slidesOf,
   stepForKey,
+  thumbnailRenderKey,
 } from "@/lib/presentation";
 import { useStore } from "@/lib/store";
 
@@ -48,7 +51,12 @@ const useSlides = (api: ExcalidrawImperativeAPI) => {
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let version = -1;
+    const initialAppState = api.getAppState();
+    let version = thumbnailRenderKey(
+      hashElementsVersion(api.getSceneElements()),
+      initialAppState.theme,
+      initialAppState.viewBackgroundColor,
+    );
 
     const refresh = async () => {
       const elements = api.getSceneElements();
@@ -74,8 +82,12 @@ const useSlides = (api: ExcalidrawImperativeAPI) => {
       if (!cancelled) setThumbnails(Object.fromEntries(rendered));
     };
 
-    const unsubscribe = api.onChange((elements) => {
-      const next = hashElementsVersion(elements);
+    const unsubscribe = api.onChange((elements, appState) => {
+      const next = thumbnailRenderKey(
+        hashElementsVersion(elements),
+        appState.theme,
+        appState.viewBackgroundColor,
+      );
       if (next === version) return;
       version = next;
       clearTimeout(timer);
@@ -274,10 +286,12 @@ const BAR_IDLE_MS = 2500;
 export function Presenter({
   api,
   containerRef,
+  exitRef,
   onExit,
 }: {
   api: ExcalidrawImperativeAPI;
   containerRef: RefObject<HTMLElement | null>;
+  exitRef: { current: (() => void) | null };
   onExit: () => void;
 }) {
   const [slides] = useState(() => slidesOf(api.getSceneElements()));
@@ -296,7 +310,7 @@ export function Presenter({
   const overBar = useRef(false);
 
   // No UI, frames clipped; everything goes back on exit.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const { zenModeEnabled, frameRendering, openSidebar, scrollX, scrollY, zoom } =
       api.getAppState();
     const saved: SavedView = {
@@ -322,13 +336,18 @@ export function Presenter({
       if (!document.fullscreenElement) leftFullscreenAt.current = Date.now();
     };
     document.addEventListener("fullscreenchange", handleFullscreen);
-    return () => {
-      document.removeEventListener("fullscreenchange", handleFullscreen);
+    const restore = createPresentationExit(() => {
       if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
       api.updateScene({ appState: saved, captureUpdate: CaptureUpdateAction.NEVER });
       api.setActiveTool({ type: "selection" });
+    });
+    exitRef.current = restore;
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreen);
+      if (exitRef.current === restore) exitRef.current = null;
+      restore();
     };
-  }, [api]);
+  }, [api, exitRef]);
 
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
@@ -411,6 +430,16 @@ export function Presenter({
   useEffect(() => {
     // Swallow every key so Excalidraw's shortcuts can't switch tools or edit mid-talk.
     const handleKey = (event: KeyboardEvent) => {
+      const target = event.target;
+      const hasInteractiveTarget =
+        target instanceof HTMLElement &&
+        target.closest(
+          'button, a[href], input, select, textarea, [contenteditable="true"], [role="button"]',
+        ) !== null;
+      if (isControlActivationKey(event.key, hasInteractiveTarget)) {
+        event.stopPropagation();
+        return;
+      }
       event.stopPropagation();
       if (event.key === "h" || event.key === "H") setBarHidden((hidden) => !hidden);
       if (event.key === "f" || event.key === "F") toggleFullscreen();
