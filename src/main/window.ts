@@ -8,12 +8,18 @@ import type {
   UnsavedReason,
   WindowCloseRequest,
 } from "@shared/ipc";
-import { app, BrowserWindow, dialog, shell } from "electron";
+import { app, BrowserWindow, dialog, screen, shell } from "electron";
 
 import icon from "../../assets/icon.png?asset";
 import { APP_GREETING_URL, APP_INDEX_URL, isTrustedRendererUrl } from "./ipc";
 import { log } from "./logger";
 import { windowBgColor } from "./settings";
+import {
+  DEFAULT_WINDOW_SIZE,
+  manageWindowState,
+  readWindowState,
+  resolveWindowState,
+} from "./window-state";
 
 type QuitState = "idle" | "pending";
 
@@ -703,9 +709,18 @@ function loadRendererPage(win: BrowserWindow, devPath: string, prodUrl: string) 
 }
 
 export function createMainWindow() {
+  const restored = resolveWindowState(
+    readWindowState(),
+    DEFAULT_WINDOW_SIZE,
+    screen.getAllDisplays(),
+  );
+
   const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    ...(restored.x !== undefined && restored.y !== undefined
+      ? { x: restored.x, y: restored.y }
+      : {}),
+    width: restored.width,
+    height: restored.height,
     show: false,
     backgroundColor: windowBgColor(),
     ...(process.platform === "linux" ? { icon } : {}),
@@ -718,6 +733,20 @@ export function createMainWindow() {
 
   showWhenReady(win);
   installCloseGuard(win);
+  manageWindowState(win, restored);
+
+  let applied = false;
+  const applyRestoredState = () => {
+    if (applied || win.isDestroyed()) return;
+    applied = true;
+    if (restored.isMaximized) win.maximize();
+    if (restored.isFullScreen) win.setFullScreen(true);
+  };
+
+  if (restored.isMaximized || restored.isFullScreen) {
+    win.once("ready-to-show", applyRestoredState);
+    win.webContents.once("did-finish-load", applyRestoredState);
+  }
 
   win.once("closed", () => {
     closeLibraryBrowserWindow();
