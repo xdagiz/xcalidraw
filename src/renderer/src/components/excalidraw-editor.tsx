@@ -405,7 +405,6 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
       if (document.visibilityState === "hidden") flushOnEdge();
     };
 
-    window.addEventListener("blur", flushOnEdge);
     document.addEventListener("visibilitychange", flushOnHidden);
     window.addEventListener("beforeunload", flushOnEdge);
 
