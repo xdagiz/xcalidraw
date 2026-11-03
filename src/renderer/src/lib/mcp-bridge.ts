@@ -55,6 +55,18 @@ const standInFor = (shape: ExcalidrawElement): ExcalidrawElementSkeleton =>
 const isSkeleton = (value: unknown): value is ExcalidrawElementSkeleton =>
   isRecord(value) && typeof value.type === "string";
 
+export const normalizeLinearPoints = (element: OrderedExcalidrawElement) => {
+  if (element.type !== "arrow" && element.type !== "line") return element;
+  const [ox, oy] = element.points[0];
+  if (ox === 0 && oy === 0) return element;
+  return {
+    ...element,
+    x: element.x + ox,
+    y: element.y + oy,
+    points: element.points.map((p) => [p[0] - ox, p[1] - oy]) as typeof element.points,
+  };
+};
+
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 const inRange = (min: number, max: number) => (value: unknown) =>
@@ -309,7 +321,9 @@ export const createMcpHandler = (deps: McpHandlerDeps) => {
       const converted = convertToExcalidrawElements([...standIns, ...elements], {
         regenerateIds: false,
       });
-      const added = converted.filter((element) => !referenced.has(element.id));
+      const added = converted
+        .filter((element) => !referenced.has(element.id))
+        .map(normalizeLinearPoints);
       const rebound = new Map(
         converted
           .filter((element) => referenced.has(element.id))

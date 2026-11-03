@@ -1,8 +1,15 @@
+import type { OrderedExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { FileEntry } from "@shared/ipc";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { createMcpHandler, withFreshIds, type McpCanvas, type McpHandlerDeps } from "./mcp-bridge";
+import {
+  createMcpHandler,
+  normalizeLinearPoints,
+  withFreshIds,
+  type McpCanvas,
+  type McpHandlerDeps,
+} from "./mcp-bridge";
 
 vi.mock("@excalidraw/excalidraw", () => ({}));
 
@@ -101,6 +108,69 @@ describe("createMcpHandler", () => {
     await expect(
       handle("insert_elements", { drawingId: "/d/a.excalidraw", elements: [{ id: "x" }] }),
     ).rejects.toThrow("changed");
+  });
+});
+
+const linearElement = (
+  type: "arrow" | "line" | "rectangle",
+  x: number,
+  points: [number, number][],
+): OrderedExcalidrawElement =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the helper only reads type/x/y/points
+  ({ id: "a", type, x, y: 250, points }) as unknown as OrderedExcalidrawElement;
+
+describe("normalizeLinearPoints", () => {
+  it("re-bases converter arrows on the origin and shifts x/y to keep their place", () => {
+    expect(
+      normalizeLinearPoints(
+        linearElement("arrow", 400, [
+          [0.5, 0],
+          [99.5, 0],
+        ]),
+      ),
+    ).toEqual({
+      id: "a",
+      type: "arrow",
+      x: 400.5,
+      y: 250,
+      points: [
+        [0, 0],
+        [99, 0],
+      ],
+    });
+  });
+
+  it("re-bases lines too", () => {
+    expect(
+      normalizeLinearPoints(
+        linearElement("line", 10, [
+          [2, 3],
+          [12, 3],
+        ]),
+      ),
+    ).toEqual({
+      id: "a",
+      type: "line",
+      x: 12,
+      y: 253,
+      points: [
+        [0, 0],
+        [10, 0],
+      ],
+    });
+  });
+
+  it("keeps elements whose points already start at the origin", () => {
+    const arrow = linearElement("arrow", 400, [
+      [0, 0],
+      [100, 0],
+    ]);
+    expect(normalizeLinearPoints(arrow)).toBe(arrow);
+  });
+
+  it("ignores shapes", () => {
+    const box = linearElement("rectangle", 400, []);
+    expect(normalizeLinearPoints(box)).toBe(box);
   });
 });
 
