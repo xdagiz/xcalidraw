@@ -1,8 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import {
+  localhostHostValidation,
+  localhostOriginValidation,
+  toNodeHandler,
+} from "@modelcontextprotocol/node";
+import { McpServer, createMcpHandler, type McpHttpHandler } from "@modelcontextprotocol/server";
 import { MCP_REQUEST, MCP_RESPONSE } from "@shared/channels";
 import { codedError } from "@shared/errors";
 import { MCP_PORT, type McpResponse } from "@shared/ipc";
@@ -22,10 +26,6 @@ import { log } from "./logger";
 import { getMainWindow } from "./window";
 
 const EDITOR_TIMEOUT_MS = 15_000;
-
-// Only allow local connections (prevents DNS rebinding). CLI clients may send Origin.
-export const isAllowedRequest = (host: string | undefined, _origin: string | undefined) =>
-  host === `127.0.0.1:${MCP_PORT}` || host === `localhost:${MCP_PORT}`;
 
 type Pending = { senderId: number; settle: (response: McpResponse) => void };
 const pending = new Map<string, Pending>();
@@ -92,13 +92,19 @@ Inserted items arrive grouped, with new ids; insert_library_item returns them so
 
 ## Style
 Optional on any element: strokeColor, backgroundColor, fillStyle ("solid" | "hachure"),
-strokeWidth (1, 2, 4), strokeStyle ("solid" | "dashed"), roughness (0 clean, 1 sketchy), opacity (0-100).
+strokeWidth (1, 2, 4), strokeStyle ("solid" | "dashed"), roughness (0 clean, 1 sketchy), opacity (0-100),
+roundness ({"type":3} rounded corners, {"type":2} proportional; omit for sharp corners).
 Good fills: #a5d8ff blue, #b2f2bb green, #ffd8a8 orange, #d0bfff purple, #ffc9c9 red, #fff3bf yellow.
 Use fillStyle "solid" with a fill so it reads clearly.
 
 ## Layout
-Leave ~80px between shapes. Lay flows left-to-right or top-to-bottom.
-Size shapes to fit their label: about 10px per character wide, 60-80px tall.
+Choose spacing from the content, not a fixed gap. When text sits between or around two things,
+estimate how much room it needs (about 10px per character) and leave that plus padding, so text
+never touches a shape or an arrow. When there is no text, use even spacing that matches the whole
+drawing: tight inside a group, wider between groups. Lay flows left-to-right or top-to-bottom.
+Size shapes to fit their label: about 10px per character wide plus padding, and 60-80px tall.
+Arrows: when the two connected shapes line up in the same row or column, use a straight arrow
+between them; use diagonals only for shapes that don't line up.
 `;
 
 const buildServer = () => {
@@ -119,7 +125,7 @@ const buildServer = () => {
     "read_drawing",
     {
       description: "Read a drawing's raw .excalidraw JSON by its id from list_drawings.",
-      inputSchema: { id: z.string() },
+      inputSchema: z.object({ id: z.string() }),
     },
     async ({ id }) => text(await readDrawingFile(id)),
   );
@@ -140,7 +146,7 @@ const buildServer = () => {
     "open_drawing",
     {
       description: "Open a drawing in xcalidraw by its id from list_drawings.",
-      inputSchema: { id: z.string() },
+      inputSchema: z.object({ id: z.string() }),
     },
     async (args) => text(await askEditor("open_drawing", args)),
   );
@@ -149,7 +155,7 @@ const buildServer = () => {
     "create_drawing",
     {
       description: "Create a new drawing in the folder root and open it.",
-      inputSchema: { name: z.string().optional() },
+      inputSchema: z.object({ name: z.string().optional() }),
     },
     async (args) => text(await askEditor("create_drawing", args)),
   );
@@ -159,12 +165,12 @@ const buildServer = () => {
     {
       description:
         "Add elements to the open drawing, shown live. Takes Excalidraw element skeletons; see read_me.",
-      inputSchema: {
+      inputSchema: z.object({
         elements: z
           .array(z.looseObject({ type: z.string() }))
           .min(1)
           .max(500),
-      },
+      }),
     },
     async (args) => text(await askEditor("add_elements", args)),
   );
@@ -174,12 +180,12 @@ const buildServer = () => {
     {
       description:
         "Change existing elements by id, e.g. {id, x, y, strokeColor, backgroundColor, text}.",
-      inputSchema: {
+      inputSchema: z.object({
         elements: z
           .array(z.looseObject({ id: z.string() }))
           .min(1)
           .max(500),
-      },
+      }),
     },
     async (args) => text(await askEditor("update_elements", args)),
   );
@@ -188,7 +194,7 @@ const buildServer = () => {
     "delete_elements",
     {
       description: "Delete elements from the open drawing by id. Their labels go with them.",
-      inputSchema: { ids: z.array(z.string()).min(1).max(500) },
+      inputSchema: z.object({ ids: z.array(z.string()).min(1).max(500) }),
     },
     async (args) => text(await askEditor("delete_elements", args)),
   );
@@ -198,7 +204,7 @@ const buildServer = () => {
     {
       description:
         "Search the public Excalidraw libraries (icons, logos, cloud, system design kits...).",
-      inputSchema: { query: z.string().max(200) },
+      inputSchema: z.object({ query: z.string().max(200) }),
     },
     async ({ query }) =>
       text(
@@ -214,7 +220,7 @@ const buildServer = () => {
     "get_library",
     {
       description: `List the items in a library. Use id "${MY_LIBRARY_ID}" for the user's own library.`,
-      inputSchema: { id: z.string().max(200) },
+      inputSchema: z.object({ id: z.string().max(200) }),
     },
     async ({ id }) => {
       const { name, items } = await getLibraryItems(id);
@@ -227,12 +233,12 @@ const buildServer = () => {
     {
       description:
         "Place a library item on the open drawing. x/y is its top-left; omit to place it beside the drawing.",
-      inputSchema: {
+      inputSchema: z.object({
         library: z.string().max(200),
         item: z.number().int().min(0),
         x: z.number().finite().optional(),
         y: z.number().finite().optional(),
-      },
+      }),
     },
     async ({ library, item, x, y }) => {
       // Pin the drawing before the download so a switch meanwhile can't redirect the item.
@@ -253,58 +259,90 @@ const buildServer = () => {
   return server;
 };
 
-let http: Server | null = null;
+export const createHandler = (): McpHttpHandler =>
+  createMcpHandler(buildServer, {
+    legacy: "stateless",
+    onerror: (error) => log.error("[mcp] request failed", error),
+  });
 
-// Resolves once the port is bound, so callers can tell the user when it isn't.
-export const startMcpServer = () => {
-  if (http) return Promise.resolve();
+export const createMcpHttpServer = () => {
+  const mcp = createHandler();
+  const handle = toNodeHandler(mcp, {
+    onerror: (error) => log.error("[mcp] transport failed", error),
+  });
+  const allowedHost = localhostHostValidation();
+  const allowedOrigin = localhostOriginValidation();
 
-  const server = createServer(async (req, res) => {
-    if (req.url !== "/mcp" || !isAllowedRequest(req.headers.host, req.headers.origin)) {
-      res.writeHead(403).end();
+  const server = createServer((req, res) => {
+    if (req.url !== "/mcp") {
+      res.writeHead(404).end();
       return;
     }
-
-    // Stateless: a fresh server per request, nothing to clean up between agents.
-    const mcp = buildServer();
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    res.on("close", () => void mcp.close());
-
-    try {
-      await mcp.connect(transport);
-      await transport.handleRequest(req, res);
-    } catch (error) {
+    if (!allowedHost(req, res)) return;
+    if (!allowedOrigin(req, res)) return;
+    void handle(req, res).catch((error: unknown) => {
       log.error("[mcp] request failed", error);
       if (!res.headersSent) res.writeHead(500).end();
-    }
+    });
   });
+
+  return { server, mcp };
+};
+
+let http: Server | null = null;
+let handler: McpHttpHandler | null = null;
+
+const startMcpServer = async () => {
+  if (http) return;
+
+  const { server, mcp } = createMcpHttpServer();
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error) => reject(error);
+      server.once("error", onError);
+      server.listen(MCP_PORT, "127.0.0.1", () => {
+        server.off("error", onError);
+        resolve();
+      });
+    });
+  } catch (error) {
+    await mcp.close();
+    log.error("[mcp] server error", error);
+    throw codedError(
+      `Couldn't start the MCP server on port ${MCP_PORT}`,
+      { code: "UNKNOWN", reason: "port-in-use" },
+      { cause: error },
+    );
+  }
+
+  server.on("error", (error) => log.error("[mcp] server error", error));
+  log.info(`[mcp] listening on 127.0.0.1:${MCP_PORT}`);
 
   http = server;
-  return new Promise<void>((resolve, reject) => {
-    server.once("error", (error) => {
-      log.error("[mcp] server error", error);
-      if (http === server) http = null;
-      reject(
-        codedError(
-          `Couldn't start the MCP server on port ${MCP_PORT}`,
-          { code: "UNKNOWN", reason: "port-in-use" },
-          { cause: error },
-        ),
-      );
-    });
-    server.listen(MCP_PORT, "127.0.0.1", () => {
-      log.info(`[mcp] listening on 127.0.0.1:${MCP_PORT}`);
-      resolve();
-    });
-  });
+  handler = mcp;
 };
 
-export const stopMcpServer = () => {
-  http?.close();
+const stopMcpServer = async () => {
+  const server = http;
+  const mcp = handler;
   http = null;
+  handler = null;
+  if (!server) return;
+
+  try {
+    await mcp?.close();
+  } finally {
+    const closed = new Promise<void>((resolve) => server.close(() => resolve()));
+    server.closeAllConnections();
+    await closed;
+  }
 };
 
-export const applyMcpSetting = async (enabled: boolean) => {
-  if (enabled) await startMcpServer();
-  else stopMcpServer();
+let lifecycle: Promise<void> = Promise.resolve();
+
+export const applyMcpSetting = (enabled: boolean) => {
+  const run = lifecycle.then(() => (enabled ? startMcpServer() : stopMcpServer()));
+  lifecycle = run.catch(() => undefined);
+  return run;
 };

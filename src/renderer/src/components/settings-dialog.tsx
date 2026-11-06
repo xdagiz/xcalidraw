@@ -324,7 +324,7 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
           <p className="text-muted-foreground text-xs font-medium">Agents</p>
           <Field orientation="horizontal" className="mt-3">
             <FieldContent>
-              <FieldLabel htmlFor="mcp-server">Let AI agents edit drawings</FieldLabel>
+              <FieldLabel htmlFor="mcp-server">MCP</FieldLabel>
               <FieldDescription className="font-mono text-xs break-all">
                 http://127.0.0.1:{MCP_PORT}/mcp
               </FieldDescription>
