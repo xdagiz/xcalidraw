@@ -265,12 +265,7 @@ export const createHandler = (): McpHttpHandler =>
     onerror: (error) => log.error("[mcp] request failed", error),
   });
 
-let http: Server | null = null;
-let handler: McpHttpHandler | null = null;
-
-const startMcpServer = async () => {
-  if (http) return;
-
+export const createMcpHttpServer = () => {
   const mcp = createHandler();
   const handle = toNodeHandler(mcp, {
     onerror: (error) => log.error("[mcp] transport failed", error),
@@ -290,6 +285,17 @@ const startMcpServer = async () => {
       if (!res.headersSent) res.writeHead(500).end();
     });
   });
+
+  return { server, mcp };
+};
+
+let http: Server | null = null;
+let handler: McpHttpHandler | null = null;
+
+const startMcpServer = async () => {
+  if (http) return;
+
+  const { server, mcp } = createMcpHttpServer();
 
   try {
     await new Promise<void>((resolve, reject) => {
