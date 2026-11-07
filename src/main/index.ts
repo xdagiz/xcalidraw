@@ -41,6 +41,7 @@ import {
 } from "./ipc";
 import { initLogger, log } from "./logger";
 import { applyMcpSetting } from "./mcp";
+import { isOriginScopedPermission, isUnattributedAccessGranted } from "./permissions";
 import { applyTheme, getSettings, setSettings, applyWindowBgColor } from "./settings";
 import { getLastOpenedFileId, getRecentFileIds } from "./store";
 import { pruneThumbnailCache, readThumbnailRecords, writeThumbnailRecord } from "./thumbnails";
@@ -186,12 +187,6 @@ const LIBRARY_CSP = [
   "object-src 'none'",
   "base-uri 'none'",
 ].join("; ");
-
-const APP_ALLOWED_PERMISSIONS = new Set([
-  "fullscreen",
-  "clipboard-read",
-  "clipboard-sanitized-write",
-]);
 
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) app.quit();
@@ -364,19 +359,28 @@ const surfacePrimaryUi = async () => {
   }
 };
 
-const installPermissionHandlers = () => {
+const createPermissionHandlers = (options: { allowUnattributed: boolean }) => {
+  const decide = (
+    permission: string,
+    pageUrl: string | null,
+    requestingUrl?: string,
+    fileAccessType?: "readable" | "writable" | "readwrite",
+  ) => {
+    if (isOriginScopedPermission(permission)) {
+      return requestingUrl
+        ? isTrustedRendererUrl(requestingUrl)
+        : pageUrl !== null && isTrustedRendererUrl(pageUrl);
+    }
+    return options.allowUnattributed && isUnattributedAccessGranted(permission, fileAccessType);
+  };
+
   const handlePermissionRequest = (
     webContents: Electron.WebContents,
     permission: string,
     callback: (granted: boolean) => void,
     details?: Electron.PermissionRequest,
   ) => {
-    if (!APP_ALLOWED_PERMISSIONS.has(permission)) {
-      callback(false);
-      return;
-    }
-
-    callback(isTrustedRendererUrl(details?.requestingUrl || webContents.getURL()));
+    callback(decide(permission, webContents.getURL(), details?.requestingUrl));
   };
 
   const handlePermissionCheck = (
@@ -384,15 +388,25 @@ const installPermissionHandlers = () => {
     permission: string,
     _requestingOrigin: string,
     details?: Electron.PermissionCheckHandlerHandlerDetails,
-  ) => {
-    if (!APP_ALLOWED_PERMISSIONS.has(permission)) return false;
-    if (webContents === null) return false;
-    return isTrustedRendererUrl(details?.requestingUrl || webContents.getURL());
-  };
+  ) =>
+    decide(
+      permission,
+      webContents?.getURL() ?? null,
+      details?.requestingUrl,
+      (details as { fileAccessType?: "readable" | "writable" | "readwrite" } | undefined)
+        ?.fileAccessType,
+    );
 
+  return { handlePermissionRequest, handlePermissionCheck };
+};
+
+const installPermissionHandlers = () => {
   for (const ses of [session.defaultSession, session.fromPartition(LIBRARY_PARTITION)]) {
-    ses.setPermissionRequestHandler(handlePermissionRequest);
-    ses.setPermissionCheckHandler(handlePermissionCheck);
+    const handlers = createPermissionHandlers({
+      allowUnattributed: ses === session.defaultSession,
+    });
+    ses.setPermissionRequestHandler(handlers.handlePermissionRequest);
+    ses.setPermissionCheckHandler(handlers.handlePermissionCheck);
   }
 };
 
