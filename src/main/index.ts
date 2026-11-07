@@ -41,7 +41,11 @@ import {
 } from "./ipc";
 import { initLogger, log } from "./logger";
 import { applyMcpSetting } from "./mcp";
-import { isOriginScopedPermission, isUnattributedAccessGranted } from "./permissions";
+import {
+  isOriginScopedPermission,
+  isUnattributedAccessGranted,
+  type FileAccessType,
+} from "./permissions";
 import { applyTheme, getSettings, setSettings, applyWindowBgColor } from "./settings";
 import { getLastOpenedFileId, getRecentFileIds } from "./store";
 import { pruneThumbnailCache, readThumbnailRecords, writeThumbnailRecord } from "./thumbnails";
@@ -363,15 +367,20 @@ const createPermissionHandlers = (options: { allowUnattributed: boolean }) => {
   const decide = (
     permission: string,
     pageUrl: string | null,
-    requestingUrl?: string,
-    fileAccessType?: "readable" | "writable" | "readwrite",
+    requestingOrigin: string,
+    details?: { requestingUrl?: string; fileAccessType?: FileAccessType },
   ) => {
     if (isOriginScopedPermission(permission)) {
-      return requestingUrl
-        ? isTrustedRendererUrl(requestingUrl)
+      return details?.requestingUrl
+        ? isTrustedRendererUrl(details.requestingUrl)
         : pageUrl !== null && isTrustedRendererUrl(pageUrl);
     }
-    return options.allowUnattributed && isUnattributedAccessGranted(permission, fileAccessType);
+    if (!options.allowUnattributed) return false;
+    return isUnattributedAccessGranted(
+      permission,
+      { fileAccessType: details?.fileAccessType, requestingOrigin },
+      isTrustedRendererUrl,
+    );
   };
 
   const handlePermissionRequest = (
@@ -380,22 +389,15 @@ const createPermissionHandlers = (options: { allowUnattributed: boolean }) => {
     callback: (granted: boolean) => void,
     details?: Electron.PermissionRequest,
   ) => {
-    callback(decide(permission, webContents.getURL(), details?.requestingUrl));
+    callback(decide(permission, webContents.getURL(), details?.requestingUrl ?? "", details));
   };
 
   const handlePermissionCheck = (
     webContents: Electron.WebContents | null,
     permission: string,
-    _requestingOrigin: string,
+    requestingOrigin: string,
     details?: Electron.PermissionCheckHandlerHandlerDetails,
-  ) =>
-    decide(
-      permission,
-      webContents?.getURL() ?? null,
-      details?.requestingUrl,
-      (details as { fileAccessType?: "readable" | "writable" | "readwrite" } | undefined)
-        ?.fileAccessType,
-    );
+  ) => decide(permission, webContents?.getURL() ?? null, requestingOrigin, details);
 
   return { handlePermissionRequest, handlePermissionCheck };
 };

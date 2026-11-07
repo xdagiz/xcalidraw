@@ -1,3 +1,5 @@
+export type FileAccessType = "readable" | "writable" | "readwrite";
+
 export const ORIGIN_SCOPED_PERMISSIONS: ReadonlySet<string> = new Set([
   "fullscreen",
   "clipboard-read",
@@ -14,8 +16,14 @@ export const isUnattributedPermission = (permission: string): boolean =>
 
 export const isUnattributedAccessGranted = (
   permission: string,
-  fileAccessType?: "readable" | "writable" | "readwrite",
-): boolean => isUnattributedPermission(permission) && fileAccessType === "writable";
+  access: { fileAccessType?: FileAccessType; requestingOrigin?: string },
+  isTrustedOrigin: (origin: string) => boolean,
+): boolean =>
+  isUnattributedPermission(permission) &&
+  access.fileAccessType === "writable" &&
+  typeof access.requestingOrigin === "string" &&
+  access.requestingOrigin !== "" &&
+  isTrustedOrigin(access.requestingOrigin);
 
 export const APP_ALLOWED_PERMISSIONS: ReadonlySet<string> = new Set([
   ...ORIGIN_SCOPED_PERMISSIONS,

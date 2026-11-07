@@ -9,6 +9,9 @@ import {
   isUnattributedPermission,
 } from "./permissions";
 
+const trustedOrigin = "app://renderer";
+const isTrustedOrigin = (origin: string) => origin === trustedOrigin;
+
 describe("permission groups", () => {
   it("allows the permissions the editor relies on", () => {
     expect(isOriginScopedPermission("fullscreen")).toBe(true);
@@ -21,12 +24,72 @@ describe("permission groups", () => {
     expect(isOriginScopedPermission("fileSystem")).toBe(false);
   });
 
+  it("grants fileSystem writes only for a trusted origin", () => {
+    expect(
+      isUnattributedAccessGranted(
+        "fileSystem",
+        { fileAccessType: "writable", requestingOrigin: trustedOrigin },
+        isTrustedOrigin,
+      ),
+    ).toBe(true);
+
+    expect(
+      isUnattributedAccessGranted(
+        "fileSystem",
+        { fileAccessType: "writable", requestingOrigin: "https://evil.example" },
+        isTrustedOrigin,
+      ),
+    ).toBe(false);
+
+    expect(
+      isUnattributedAccessGranted(
+        "fileSystem",
+        { fileAccessType: "writable", requestingOrigin: "" },
+        isTrustedOrigin,
+      ),
+    ).toBe(false);
+
+    expect(
+      isUnattributedAccessGranted("fileSystem", { fileAccessType: "writable" }, isTrustedOrigin),
+    ).toBe(false);
+  });
+
   it("grants fileSystem writes but keeps reads denied", () => {
-    expect(isUnattributedAccessGranted("fileSystem", "writable")).toBe(true);
-    expect(isUnattributedAccessGranted("fileSystem", "readable")).toBe(false);
-    expect(isUnattributedAccessGranted("fileSystem", "readwrite")).toBe(false);
-    expect(isUnattributedAccessGranted("fileSystem", undefined)).toBe(false);
-    expect(isUnattributedAccessGranted("media", "writable")).toBe(false);
+    expect(
+      isUnattributedAccessGranted(
+        "fileSystem",
+        { fileAccessType: "writable", requestingOrigin: trustedOrigin },
+        isTrustedOrigin,
+      ),
+    ).toBe(true);
+    expect(
+      isUnattributedAccessGranted(
+        "fileSystem",
+        { fileAccessType: "readable", requestingOrigin: trustedOrigin },
+        isTrustedOrigin,
+      ),
+    ).toBe(false);
+    expect(
+      isUnattributedAccessGranted(
+        "fileSystem",
+        { fileAccessType: "readwrite", requestingOrigin: trustedOrigin },
+        isTrustedOrigin,
+      ),
+    ).toBe(false);
+    expect(
+      isUnattributedAccessGranted(
+        "fileSystem",
+        { requestingOrigin: trustedOrigin },
+        isTrustedOrigin,
+      ),
+    ).toBe(false);
+    expect(
+      isUnattributedAccessGranted(
+        "media",
+        { fileAccessType: "writable", requestingOrigin: trustedOrigin },
+        isTrustedOrigin,
+      ),
+    ).toBe(false);
   });
 
   it("denies everything else", () => {
