@@ -21,7 +21,6 @@ import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
-import { MAX_DRAWING_CONTENT_BYTES, validateDrawingRecord } from "@shared/ipc";
 import { useHotkey } from "@tanstack/react-hotkeys";
 import {
   ArrowLeftIcon,
@@ -591,48 +590,6 @@ export const ExcalidrawEditor = ({ fileId }: Props) => {
     if (!isLoadingDrawings) return;
     scratch.invalidate();
   }, [isLoadingDrawings, scratch]);
-
-  useEffect(() => {
-    const root = editorRef.current;
-
-    const handleDrop = (event: DragEvent) => {
-      const sceneFiles = [...(event.dataTransfer?.files ?? [])].filter((file) =>
-        file.name.toLowerCase().endsWith(".excalidraw"),
-      );
-      if (sceneFiles.length === 0) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-
-      void (async () => {
-        const opened: string[] = [];
-        for (const file of sceneFiles) {
-          try {
-            const content = await file.text();
-            if (new TextEncoder().encode(content).length > MAX_DRAWING_CONTENT_BYTES) {
-              throw new Error("Drawing exceeds the size limit");
-            }
-            const parsed: unknown = JSON.parse(content);
-            validateDrawingRecord(parsed);
-            const imported = await useStore
-              .getState()
-              .createFileWithContent(null, stripExcalidraw(file.name), content);
-            if (imported) opened.push(imported);
-          } catch (error) {
-            toast.add({
-              title: `Couldn’t import ${file.name}`,
-              description: toAppError(error, "create").detail,
-              type: "error",
-            });
-          }
-        }
-        if (opened.length > 0) await useStore.getState().setOpenFileId(opened[0]);
-      })();
-    };
-
-    root?.addEventListener("drop", handleDrop, true);
-    return () => root?.removeEventListener("drop", handleDrop, true);
-  }, []);
 
   const toggleSidebarRef = useRef(toggleSidebar);
   const openRef = useRef(open);

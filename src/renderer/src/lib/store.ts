@@ -23,6 +23,7 @@ import { saveErrorToastId, toAppError, type AppError } from "@/lib/app-error";
 import { createConflictResolver } from "@/lib/conflict-resolution";
 import { reduceEntries, removeKey, type ExternalConflict } from "@/lib/conflicts";
 import type { SaveOrigin } from "@/lib/drawing-session";
+import { readDroppedScenes, uniqueImportName, type DroppedFile } from "@/lib/drop-import";
 import {
   applySubtreeDelete,
   applySubtreeRemap,
@@ -126,6 +127,21 @@ export const resolveEntryName = (
   return nextDefaultName(entries, parentId, kind);
 };
 
+export type ImportedEntry = {
+  id: string;
+  name: string;
+};
+
+export type ImportFailure = {
+  name: string;
+  reason: string;
+};
+
+export type ImportResult = {
+  imported: ImportedEntry[];
+  failed: ImportFailure[];
+};
+
 export type State = {
   drawings: DrawingInfo | null;
   entries: FileEntry[];
@@ -168,6 +184,10 @@ export type State = {
     fileName: string,
     content: string,
   ) => Promise<string | null>;
+  importFileDrops: (
+    parentId: string | null,
+    files: readonly DroppedFile[],
+  ) => Promise<ImportResult>;
   createAndOpenEntry: (
     parentId: string | null,
     kind: "file" | "directory",
@@ -680,6 +700,35 @@ export const useStore = create<State>((set, get) => {
       }
 
       return entry.id;
+    },
+
+    importFileDrops: async (parentId, files) => {
+      const { drafts, rejected } = await readDroppedScenes(files);
+      const failed = [...rejected];
+      const imported: ImportedEntry[] = [];
+      const taken = get()
+        .entries.filter((entry) => entry.parentId === parentId && entry.kind === "file")
+        .map((entry) => entry.name);
+
+      for (const draft of drafts) {
+        const name = uniqueImportName(taken, draft.name);
+        try {
+          const id = await get().createFileWithContent(parentId, name, draft.content);
+          if (id === null) {
+            failed.push({ name: draft.name, reason: "Couldn’t save the drawing" });
+            continue;
+          }
+          taken.push(name);
+          imported.push({ id, name });
+        } catch (error) {
+          failed.push({ name: draft.name, reason: toAppError(error, "create").detail });
+        }
+      }
+
+      const first = imported[0];
+      if (first && get().openFileId === null) await get().setOpenFileId(first.id);
+
+      return { imported, failed };
     },
 
     createAndOpenEntry: async (parentId, kind, requestedName) => {

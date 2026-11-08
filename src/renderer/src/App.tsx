@@ -10,6 +10,7 @@ import { AppSidebar } from "./components/app-sidebar";
 import { CommandPalette } from "./components/command-palette";
 import { DrawingSearch } from "./components/drawing-search";
 import { DrawingSwitcher } from "./components/drawing-switcher";
+import { DropOverlay } from "./components/drop-overlay";
 import { EditorView } from "./components/editor-view";
 import { ErrorBoundary } from "./components/error-boundary";
 import { SettingsDialog } from "./components/settings-dialog";
@@ -229,6 +230,7 @@ const App = () => {
             onCancel={switcher.cancel}
           />
         )}
+        <DropOverlay />
       </SidebarProvider>
     </ThemeProvider>
   );
