@@ -152,6 +152,7 @@ export type State = {
   applyEntries: (event: FilesChangedEvent) => void;
   reportWatcherError: (event: WatcherErrorEvent) => void;
   setOpenFileId: (fileId: string | null) => Promise<boolean>;
+  openFileWhenReady: (fileId: string) => Promise<boolean>;
   openReservedFile: (fileId: string) => Promise<boolean>;
   openHome: () => Promise<void>;
   renameEntry: (id: string, newName: string) => Promise<FileEntry | null>;
@@ -533,6 +534,20 @@ export const useStore = create<State>((set, get) => {
         });
         return false;
       }
+    },
+
+    openFileWhenReady: async (fileId) => {
+      if (!isOpenableFile(get().entries, fileId)) {
+        try {
+          const snapshot = await window.api.drawings.load();
+          get().loadSnapshot(snapshot);
+        } catch (error) {
+          get().reportError(error, "load");
+          return false;
+        }
+      }
+
+      return get().setOpenFileId(fileId);
     },
 
     openReservedFile: async (fileId) => {

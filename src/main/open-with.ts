@@ -1,4 +1,4 @@
-import { stat, readFile, realpath } from "node:fs/promises";
+import { open, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 
 import { APP_OPEN_PATHS } from "@shared/channels";
@@ -47,41 +47,59 @@ const nextImportName = (takenNames: readonly string[], originalName: string) => 
 };
 
 export type ImportDrawingDeps = {
-  createEntry: (
-    parentId: string | null,
+  listSiblings: (root: string) => Promise<readonly { id: string; name: string }[]>;
+  createDrawingWithContent: (
+    root: string,
     name: string,
-    kind: "file" | "directory",
+    content: string,
   ) => Promise<{ id: string }>;
-  writeDrawingFile: (id: string, content: string) => Promise<unknown>;
-  listEntries: () => Promise<readonly { id: string; kind: string; name: string }[]>;
 };
 
-export const importExternalDrawing = async (absPath: string, deps: ImportDrawingDeps) => {
-  const stats = await stat(absPath).catch(() => null);
-  if (!stats?.isFile()) {
-    throw codedError(FILE_NOT_FOUND_MESSAGE, { code: "NOT_FOUND", reason: "missing-file" });
-  }
+const notFound = () =>
+  codedError(FILE_NOT_FOUND_MESSAGE, { code: "NOT_FOUND", reason: "missing-file" });
 
-  if (stats.size > MAX_DRAWING_CONTENT_BYTES) {
-    throw codedError(`Content exceeds ${MAX_DRAWING_CONTENT_BYTES} bytes`, {
-      code: "TOO_LARGE",
-      reason: "content-too-large",
-      limit: MAX_DRAWING_CONTENT_BYTES,
-    });
-  }
+const tooLarge = () =>
+  codedError(`Content exceeds ${MAX_DRAWING_CONTENT_BYTES} bytes`, {
+    code: "TOO_LARGE",
+    reason: "content-too-large",
+    limit: MAX_DRAWING_CONTENT_BYTES,
+  });
 
-  const content = await readFile(absPath, "utf8");
+const readDrawingContent = async (absPath: string) => {
+  const handle = await open(absPath, "r").catch(() => {
+    throw notFound();
+  });
+
+  try {
+    const stats = await handle.stat();
+    if (!stats.isFile()) throw notFound();
+    if (stats.size > MAX_DRAWING_CONTENT_BYTES) throw tooLarge();
+
+    const buffer = Buffer.allocUnsafe(MAX_DRAWING_CONTENT_BYTES + 1);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    if (bytesRead > MAX_DRAWING_CONTENT_BYTES) throw tooLarge();
+
+    return buffer.subarray(0, bytesRead).toString("utf8");
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+};
+
+export const importExternalDrawing = async (
+  absPath: string,
+  root: string,
+  deps: ImportDrawingDeps,
+) => {
+  const content = await readDrawingContent(absPath);
   assertDrawingJson(content);
 
-  const siblings = (await deps.listEntries()).filter((entry) => parentIdOf(entry.id) === null);
+  const siblings = (await deps.listSiblings(root)).filter((entry) => parentIdOf(entry.id) === null);
   const name = nextImportName(
     siblings.map((entry) => entry.name),
-    basename(absPath),
+    basename(absPath).trim(),
   );
 
-  const entry = await deps.createEntry(null, name, "file");
-  await deps.writeDrawingFile(entry.id, content);
-
+  const entry = await deps.createDrawingWithContent(root, name, content);
   return entry.id;
 };
 
@@ -97,14 +115,16 @@ export type OpenPathQueueDeps = {
   getReadyWindow: () => OpenPathWindow | null;
   send: (win: OpenPathWindow, outcomes: OpenPathOutcome[]) => void;
   resolveId: (root: string, absPath: string) => Promise<string | null>;
-  importDrawing: (absPath: string) => Promise<string>;
+  importDrawing: (absPath: string, root: string) => Promise<string>;
   onError?: (error: unknown) => void;
 };
 
 export const OPEN_PATH_RETRY_MS = 1000;
 
+type PendingOpen = { path: string; outcome?: OpenPathOutcome };
+
 export const createOpenPathQueue = (deps: OpenPathQueueDeps) => {
-  const queued: string[] = [];
+  const pending: PendingOpen[] = [];
   let flushing = false;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -115,7 +135,7 @@ export const createOpenPathQueue = (deps: OpenPathQueueDeps) => {
   };
 
   const scheduleRetry = () => {
-    if (retryTimer !== null || queued.length === 0) return;
+    if (retryTimer !== null || pending.length === 0) return;
     retryTimer = setTimeout(() => {
       retryTimer = null;
       void flush().catch((error) => deps.onError?.(error));
@@ -125,7 +145,22 @@ export const createOpenPathQueue = (deps: OpenPathQueueDeps) => {
 
   const enqueue = (paths: readonly string[]) => {
     for (const absPath of paths) {
-      if (!queued.includes(absPath)) queued.push(absPath);
+      if (pending.some((item) => item.path === absPath)) continue;
+      pending.push({ path: absPath });
+    }
+  };
+
+  const resolveOutcome = async (item: PendingOpen, root: string) => {
+    try {
+      const resolved = await deps.resolveId(root, item.path);
+      const id = resolved ?? (await deps.importDrawing(item.path, root));
+      item.outcome = { status: "open", id };
+    } catch (error) {
+      item.outcome = {
+        status: "error",
+        name: basename(item.path),
+        message: error instanceof Error ? error.message : String(error),
+      };
     }
   };
 
@@ -133,38 +168,34 @@ export const createOpenPathQueue = (deps: OpenPathQueueDeps) => {
     if (flushing) return;
     flushing = true;
     try {
-      while (queued.length > 0) {
-        if (!deps.getReadyWindow()) return;
+      while (pending.length > 0) {
+        const item = pending[0];
+        if (!item) break;
 
-        const root = await deps.getRoot();
-        if (!root) {
+        if (!deps.getReadyWindow()) {
           scheduleRetry();
           return;
         }
 
-        const absPath = queued.shift();
-        if (absPath === undefined) return;
+        if (!item.outcome) {
+          const root = await deps.getRoot();
+          if (!root) {
+            scheduleRetry();
+            return;
+          }
 
-        let outcome: OpenPathOutcome;
-        try {
-          const resolved = await deps.resolveId(root, absPath);
-          const id = resolved ?? (await deps.importDrawing(absPath));
-          outcome = { status: "open", id };
-        } catch (error) {
-          outcome = {
-            status: "error",
-            name: basename(absPath),
-            message: error instanceof Error ? error.message : String(error),
-          };
+          await resolveOutcome(item, root);
         }
 
         const win = deps.getReadyWindow();
-        if (!win || win.isDestroyed()) {
-          queued.unshift(absPath);
+        const outcome = item.outcome;
+        if (!win || win.isDestroyed() || !outcome) {
           scheduleRetry();
           return;
         }
+
         deps.send(win, [outcome]);
+        pending.shift();
       }
       cancelRetry();
     } finally {

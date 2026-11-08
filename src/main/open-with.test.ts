@@ -45,27 +45,26 @@ describe("resolveDrawingIdForPath", () => {
     ).resolves.toBeNull();
   });
 
-  it("resolves symlinks to the real file inside the root", async () => {
-    const link = path.join(root, "link.excalidraw");
-    await symlink(path.join(root, "nested", "a.excalidraw"), link);
-    await expect(resolveDrawingIdForPath(root, link)).resolves.toBe("nested/a.excalidraw");
-  });
+  it.skipIf(process.platform === "win32")(
+    "resolves symlinks to the real file inside the root",
+    async () => {
+      const link = path.join(root, "link.excalidraw");
+      await symlink(path.join(root, "nested", "a.excalidraw"), link);
+      await expect(resolveDrawingIdForPath(root, link)).resolves.toBe("nested/a.excalidraw");
+    },
+  );
 });
 
 const makeImportDeps = () => {
-  const calls: { create: string[]; written: [string, string][] } = { create: [], written: [] };
-  const entries: { id: string; kind: string; name: string }[] = [];
+  const calls: { created: [string, string, string][] } = { created: [] };
+  const entries: { id: string; name: string }[] = [];
   const deps = {
-    createEntry: async (parentId: string | null, name: string) => {
-      calls.create.push(`${parentId}:${name}`);
-      const id = name;
-      entries.push({ id, kind: "file", name });
-      return { id };
+    listSiblings: async () => entries,
+    createDrawingWithContent: async (root: string, name: string, content: string) => {
+      calls.created.push([root, name, content]);
+      entries.push({ id: name, name });
+      return { id: name };
     },
-    writeDrawingFile: async (id: string, content: string) => {
-      calls.written.push([id, content]);
-    },
-    listEntries: async () => entries,
   };
   return { calls, deps };
 };
@@ -77,9 +76,8 @@ describe("importExternalDrawing", () => {
       const file = path.join(dir, "trip.excalidraw");
       await writeFile(file, '{"elements":[]}\n');
       const { calls, deps } = makeImportDeps();
-      await expect(importExternalDrawing(file, deps)).resolves.toBe("trip.excalidraw");
-      expect(calls.create).toEqual(["null:trip.excalidraw"]);
-      expect(calls.written).toEqual([["trip.excalidraw", '{"elements":[]}\n']]);
+      await expect(importExternalDrawing(file, "/root", deps)).resolves.toBe("trip.excalidraw");
+      expect(calls.created).toEqual([["/root", "trip.excalidraw", '{"elements":[]}\n']]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -91,12 +89,12 @@ describe("importExternalDrawing", () => {
       const file = path.join(dir, "trip.excalidraw");
       await writeFile(file, "{}\n");
       const { calls, deps } = makeImportDeps();
-      deps.listEntries = async () => [
-        { id: "trip.excalidraw", kind: "file", name: "trip.excalidraw" },
-        { id: "folder", kind: "directory", name: "trip (2).excalidraw" },
+      deps.listSiblings = async () => [
+        { id: "trip.excalidraw", name: "trip.excalidraw" },
+        { id: "trip (2).excalidraw", name: "trip (2).excalidraw" },
       ];
-      await expect(importExternalDrawing(file, deps)).resolves.toBe("trip (3).excalidraw");
-      expect(calls.create).toEqual(["null:trip (3).excalidraw"]);
+      await expect(importExternalDrawing(file, "/root", deps)).resolves.toBe("trip (3).excalidraw");
+      expect(calls.created).toEqual([["/root", "trip (3).excalidraw", "{}\n"]]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

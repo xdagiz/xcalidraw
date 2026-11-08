@@ -23,6 +23,7 @@ import {
 import { getDrawings, pickDrawings } from "./drawings";
 import {
   copyEntry,
+  createDrawingWithContent,
   createEntry,
   deleteEntry,
   listEntries,
@@ -217,11 +218,13 @@ const openPathQueue = createOpenPathQueue({
     win.webContents.send(APP_OPEN_PATHS, { outcomes });
   },
   resolveId: resolveDrawingIdForPath,
-  importDrawing: async (absPath) => {
-    const id = await importExternalDrawing(absPath, {
-      createEntry: withWatchIgnore(createEntry),
-      writeDrawingFile: withWatchIgnore(writeDrawingFile),
-      listEntries,
+  importDrawing: async (absPath, root) => {
+    const id = await importExternalDrawing(absPath, root, {
+      listSiblings: (drawingsRoot) => listEntries(drawingsRoot),
+      createDrawingWithContent: withWatchIgnore(
+        (drawingsRoot: string, name: string, content: string, hooks?: FsMutationHooks) =>
+          createDrawingWithContent(null, name, content, { hooks, root: drawingsRoot }),
+      ),
     });
     const w = ensureWatcher();
     await w.refreshNow().catch((error) => log.error("[watcher] refresh failed", error));
@@ -234,6 +237,7 @@ app.on("open-file", (event, filePath) => {
   event.preventDefault();
   openPathQueue.enqueue(extractOpenPaths([filePath]));
   openPathQueue.flush();
+  void surfacePrimaryUi().catch((error) => log.error("[ui] surface failed", error));
 });
 
 openPathQueue.enqueue(extractOpenPaths(process.argv));
@@ -556,7 +560,10 @@ void app.whenReady().then(async () => {
     writeDrawingFileRecover: withWatchIgnore(writeDrawingFileRecover),
     flushOpenPaths: () => openPathQueue.flush(),
     destroyWindow,
-    markWindowReady,
+    markWindowReady: (win) => {
+      markWindowReady(win);
+      openPathQueue.flush();
+    },
     cancelQuit,
     onDirtyState,
     onFlushStarted,
