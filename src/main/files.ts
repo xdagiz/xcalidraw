@@ -14,13 +14,14 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 
+import { assertDrawingJson } from "@shared/drawing-content";
+import { isExcalidrawFileName } from "@shared/drawing-path";
 import { codedError, errorCodeOf } from "@shared/errors";
 import {
   FILE_NOT_FOUND_MESSAGE,
   MAX_DRAWING_CONTENT_BYTES,
   nextCopyName,
   parentIdOf,
-  validateDrawingRecord,
   type FileDeleteMode,
   type FileEntry,
   sortFileEntries,
@@ -225,8 +226,6 @@ export const atomicWriteFile = async (absPath: string, data: string, hooks?: FsM
     }
   }
 };
-
-const isExcalidrawFileName = (name: string) => name.toLowerCase().endsWith(".excalidraw");
 
 const validateEntryName = (name: string) => {
   const leaf = name.trim();
@@ -459,26 +458,6 @@ const requireDrawingsRoot = async () => {
 
 const EMPTY_DRAWING_CONTENT =
   '{"type":"excalidraw","version":2,"source":"xcalidraw","elements":[],"appState":{},"files":{}}';
-
-const assertDrawingJson = (content: string) => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(content);
-  } catch {
-    throw codedError("Drawing content is not valid JSON", {
-      code: "INVALID",
-      reason: "invalid-json",
-    });
-  }
-  try {
-    validateDrawingRecord(parsed);
-  } catch (error) {
-    throw codedError(error instanceof Error ? error.message : "Invalid drawing", {
-      code: "INVALID",
-      reason: "invalid-record",
-    });
-  }
-};
 
 const assertContentSize = (content: string) => {
   const bytes = Buffer.byteLength(content, "utf8");

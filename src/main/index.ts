@@ -6,7 +6,7 @@ for (const stream of [process.stdout, process.stderr]) {
 }
 
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
-import { FILES_CHANGED, WATCHER_ERROR } from "@shared/channels";
+import { APP_OPEN_PATHS, FILES_CHANGED, WATCHER_ERROR } from "@shared/channels";
 import type { FilesChangedEvent, WatcherErrorEvent } from "@shared/ipc";
 import {
   app,
@@ -41,6 +41,12 @@ import {
 } from "./ipc";
 import { initLogger, log } from "./logger";
 import { applyMcpSetting } from "./mcp";
+import {
+  createOpenPathQueue,
+  extractOpenPaths,
+  importExternalDrawing,
+  resolveDrawingIdForPath,
+} from "./open-with";
 import {
   isOriginScopedPermission,
   isUnattributedAccessGranted,
@@ -192,10 +198,45 @@ const LIBRARY_CSP = [
   "base-uri 'none'",
 ].join("; ");
 
-const gotTheLock = app.requestSingleInstanceLock();
+const gotTheLock = app.requestSingleInstanceLock({ cwd: process.cwd() });
 if (!gotTheLock) app.quit();
 
 registerAppScheme();
+
+const openPathQueue = createOpenPathQueue({
+  getRoot: async () => {
+    const info = await getDrawings();
+    return info.configured && info.path ? info.path : null;
+  },
+  getReadyWindow: () => {
+    const win = getMainWindow();
+    if (!win || win.isDestroyed() || !isWindowReady(win)) return null;
+    return win;
+  },
+  send: (win, outcomes) => {
+    win.webContents.send(APP_OPEN_PATHS, { outcomes });
+  },
+  resolveId: resolveDrawingIdForPath,
+  importDrawing: async (absPath) => {
+    const id = await importExternalDrawing(absPath, {
+      createEntry: withWatchIgnore(createEntry),
+      writeDrawingFile: withWatchIgnore(writeDrawingFile),
+      listEntries,
+    });
+    const w = ensureWatcher();
+    await w.refreshNow().catch((error) => log.error("[watcher] refresh failed", error));
+    return id;
+  },
+  onError: (error) => log.error("[open-with] flush failed", error),
+});
+
+app.on("open-file", (event, filePath) => {
+  event.preventDefault();
+  openPathQueue.enqueue(extractOpenPaths([filePath]));
+  openPathQueue.flush();
+});
+
+openPathQueue.enqueue(extractOpenPaths(process.argv));
 
 function broadcastFilesChanged(event: FilesChangedEvent) {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -204,6 +245,7 @@ function broadcastFilesChanged(event: FilesChangedEvent) {
     if (win.webContents.session === session.fromPartition(LIBRARY_PARTITION)) continue;
     win.webContents.send(FILES_CHANGED, event);
   }
+  openPathQueue.flush();
 }
 
 function sendWatcherError(event: WatcherErrorEvent) {
@@ -512,6 +554,7 @@ void app.whenReady().then(async () => {
         deleteEntry(id, mode, hooks, (trashPath) => shell.trashItem(trashPath)),
     ),
     writeDrawingFileRecover: withWatchIgnore(writeDrawingFileRecover),
+    flushOpenPaths: () => openPathQueue.flush(),
     destroyWindow,
     markWindowReady,
     cancelQuit,
@@ -552,6 +595,7 @@ void app.whenReady().then(async () => {
             void w.refreshNow().catch((error) => log.error("[watcher] refresh failed", error));
           }
           void pruneThumbnails();
+          openPathQueue.flush();
         } else {
           await w.stop();
         }
@@ -580,8 +624,11 @@ void app.whenReady().then(async () => {
   void runUpdateCheck({ alertOnFail: false, trigger: "boot" });
   void applyMcpSetting(getSettings().mcpServer).catch(() => undefined);
 
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv, workingDirectory) => {
+    const paths = extractOpenPaths(argv, workingDirectory ?? undefined);
+    if (paths.length > 0) openPathQueue.enqueue(paths);
     void surfacePrimaryUi().catch((error) => log.error("[ui] surface failed", error));
+    openPathQueue.flush();
   });
 
   app.on("activate", () => {

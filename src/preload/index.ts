@@ -1,5 +1,7 @@
 import {
   APP_QUIT,
+  APP_OPEN_PATHS,
+  APP_OPEN_PATHS_FLUSH,
   CONTEXT_MENU_SHOW,
   DIALOG_FILE_CHANGED,
   DIALOG_FILE_RECOVER,
@@ -49,6 +51,7 @@ import type {
   FilesChangedEvent,
   LibraryReturnedEvent,
   McpRequest,
+  OpenPathsEvent,
   UpdateStatus,
   WatcherErrorEvent,
   WindowCloseRequest,
@@ -98,6 +101,12 @@ const invoke = <K extends ChannelName>(
 const api: NativeApi = {
   app: {
     quit: () => invoke(APP_QUIT),
+    flushOpenPaths: () => invoke(APP_OPEN_PATHS_FLUSH),
+    onOpenPaths: (cb) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: OpenPathsEvent) => cb(payload);
+      ipcRenderer.on(APP_OPEN_PATHS, listener);
+      return () => ipcRenderer.removeListener(APP_OPEN_PATHS, listener);
+    },
   },
   drawings: {
     get: () => invoke(DRAWINGS_GET),

@@ -73,6 +73,7 @@ export type ChannelMap = {
     operation: "unexpected";
   };
   "app:quit": { args: []; result: void; operation: "unexpected" };
+  "app:open-paths-flush": { args: []; result: void; operation: "unexpected" };
   "updates:check": { args: []; result: UpdateStatus; operation: "unexpected" };
   "updates:download": { args: []; result: UpdateStatus; operation: "unexpected" };
   "updates:install": { args: []; result: void; operation: "unexpected" };
@@ -323,6 +324,14 @@ export const validateDrawingRecord = (record: unknown): void => {
 
 export type LibraryReturnedEvent = {
   hash: string;
+};
+
+export type OpenPathOutcome =
+  | { status: "open"; id: string }
+  | { status: "error"; name: string; message: string };
+
+export type OpenPathsEvent = {
+  outcomes: OpenPathOutcome[];
 };
 
 export type McpRequest = {
