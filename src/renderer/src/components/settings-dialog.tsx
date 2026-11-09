@@ -1,3 +1,4 @@
+import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area";
 import type { AutosaveSetting, ThemePreference } from "@shared/ipc";
 import { autosaveKey, parseAutosaveKey } from "@shared/ipc";
 import { MCP_PORT } from "@shared/ipc";
@@ -200,172 +201,184 @@ export const SettingsDialog = ({ open, onOpenChange }: Props) => {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85svh] gap-0 overflow-y-auto sm:max-w-lg">
-        <DialogHeader>
+      <DialogContent className="group/dialog flex max-h-[85svh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-4">
           <DialogTitle className="text-xl font-bold">Settings</DialogTitle>
         </DialogHeader>
 
-        <div className="pt-2">
-          <p className="text-muted-foreground text-xs font-medium">Appearance</p>
-          <RadioGroup
-            aria-label="Theme"
-            value={settings.theme}
-            onValueChange={(value) => {
-              const option = THEME_OPTIONS.find((o) => o.value === value);
-              if (option) void handleThemeChange(option.value);
-            }}
-            className="mt-3 grid grid-cols-3 gap-3"
+        <ScrollAreaPrimitive.Root className="relative flex min-h-0 flex-1 flex-col">
+          <ScrollAreaPrimitive.Viewport className="min-h-0 w-full flex-1">
+            <div className="px-6 pb-6">
+              <div className="pt-2">
+                <p className="text-muted-foreground text-xs font-medium">Appearance</p>
+                <RadioGroup
+                  aria-label="Theme"
+                  value={settings.theme}
+                  onValueChange={(value) => {
+                    const option = THEME_OPTIONS.find((o) => o.value === value);
+                    if (option) void handleThemeChange(option.value);
+                  }}
+                  className="mt-3 grid grid-cols-3 gap-3"
+                >
+                  {THEME_OPTIONS.map((option) => (
+                    <FieldLabel
+                      key={option.value}
+                      htmlFor={`theme-${option.value}`}
+                      className="bg-card has-[button[data-checked]]:border-primary hover:border-foreground/25 has-[button:focus-visible]:border-ring has-[button:focus-visible]:ring-ring/50 flex w-full cursor-pointer flex-col gap-0 overflow-hidden rounded-lg border text-left shadow-none transition-colors has-[button:focus-visible]:ring-1"
+                    >
+                      <span className="relative block">
+                        <ThemePreview value={option.value} />
+                        {settings.theme === option.value && (
+                          <span className="bg-primary text-primary-foreground absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded-full">
+                            <CheckIcon className="size-3" />
+                          </span>
+                        )}
+                      </span>
+                      <span className="flex items-center justify-center gap-1.5 py-2 text-xs font-medium">
+                        <option.icon className="text-muted-foreground size-3.5" />
+                        {option.label}
+                      </span>
+                      <span className="sr-only">
+                        <RadioGroupItem value={option.value} id={`theme-${option.value}`} />
+                      </span>
+                    </FieldLabel>
+                  ))}
+                </RadioGroup>
+              </div>
+
+              <div className="pt-6">
+                <p className="text-muted-foreground text-xs font-medium">Autosave</p>
+                <RadioGroup
+                  className="bg-muted/50 has-[:focus-visible]:ring-ring/50 relative mt-3 grid grid-cols-6 gap-1 rounded-xl border p-1 has-[:focus-visible]:ring-2"
+                  aria-label="Autosave"
+                  value={autosaveKey(settings.autosave)}
+                  onValueChange={(value) => {
+                    const setting = parseAutosaveKey(value);
+                    if (setting) void handleAutosaveChange(setting);
+                  }}
+                >
+                  {AUTOSAVE_OPTIONS.map((option) => (
+                    <Label
+                      key={option.key}
+                      htmlFor={`autosave-${option.key}`}
+                      className="text-foreground relative z-10 flex w-full cursor-pointer items-center justify-center rounded-lg px-2 py-2.5 text-xs font-medium select-none"
+                    >
+                      <span>{option.label}</span>
+                      <span className="sr-only">
+                        <RadioGroupItem value={option.key} id={`autosave-${option.key}`} />
+                      </span>
+                    </Label>
+                  ))}
+                  <span
+                    aria-hidden
+                    className="seg-thumb seg-thumb-6"
+                    style={{
+                      transform: `translateX(calc(${activeAutosaveIndex * 100}% + ${activeAutosaveIndex * 4}px))`,
+                      opacity: activeAutosaveIndex >= 0 ? 1 : 0,
+                    }}
+                  />
+                </RadioGroup>
+              </div>
+
+              <div className="pt-6">
+                <p className="text-muted-foreground text-xs font-medium">Startup</p>
+                <Field orientation="horizontal" className="mt-3">
+                  <FieldContent>
+                    <FieldLabel htmlFor="reopen-last-drawing">Reopen last drawing</FieldLabel>
+                  </FieldContent>
+                  <Switch
+                    id="reopen-last-drawing"
+                    checked={settings.reopenLastDrawing}
+                    onCheckedChange={(value) => void handleReopenChange(value)}
+                  />
+                </Field>
+              </div>
+
+              <div className="pt-6">
+                <p className="text-muted-foreground text-xs font-medium">App</p>
+                <Field orientation="horizontal" className="mt-3">
+                  <FieldContent>
+                    <FieldLabel htmlFor="show-recents">Show recent drawings</FieldLabel>
+                  </FieldContent>
+                  <Switch
+                    id="show-recents"
+                    checked={settings.showRecents}
+                    onCheckedChange={(value) => void handleShowRecentsChange(value)}
+                  />
+                </Field>
+              </div>
+
+              <div className="pt-6">
+                <p className="text-muted-foreground text-xs font-medium">Updates</p>
+                <Field orientation="horizontal" className="mt-3">
+                  <FieldContent>
+                    <FieldLabel htmlFor="auto-download-updates">
+                      Download updates automatically
+                    </FieldLabel>
+                  </FieldContent>
+                  <Switch
+                    id="auto-download-updates"
+                    checked={settings.autoDownloadUpdates}
+                    onCheckedChange={(value) => void handleAutoDownloadChange(value)}
+                  />
+                </Field>
+              </div>
+
+              <div className="pt-6">
+                <p className="text-muted-foreground text-xs font-medium">Agents</p>
+                <Field orientation="horizontal" className="mt-3">
+                  <FieldContent>
+                    <FieldLabel htmlFor="mcp-server">MCP</FieldLabel>
+                    <FieldDescription className="font-mono text-xs break-all">
+                      http://127.0.0.1:{MCP_PORT}/mcp
+                    </FieldDescription>
+                  </FieldContent>
+                  <Switch
+                    id="mcp-server"
+                    checked={settings.mcpServer}
+                    onCheckedChange={(value) => void handleMcpServerChange(value)}
+                  />
+                </Field>
+              </div>
+
+              <div className="pt-6">
+                <p className="text-muted-foreground text-xs font-medium">Storage</p>
+                <Field orientation="horizontal" className="mt-3">
+                  <FieldContent>
+                    <FieldLabel>Drawings folder</FieldLabel>
+                    <FieldDescription
+                      className="font-mono text-xs break-all"
+                      title={drawings?.path ?? undefined}
+                    >
+                      {drawings?.displayPath ?? "Not set"}
+                    </FieldDescription>
+                  </FieldContent>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="bevel"
+                    disabled={pickingFolder}
+                    onClick={() => void handleChangeFolder()}
+                  >
+                    <Folder className="size-3.5" />
+                    {pickingFolder ? "Choosing…" : "Change…"}
+                  </Button>
+                </Field>
+                {drawings?.missing && (
+                  <FieldDescription className="text-destructive mt-2">
+                    This folder can’t be found. Pick it again or choose a new one.
+                  </FieldDescription>
+                )}
+              </div>
+            </div>
+          </ScrollAreaPrimitive.Viewport>
+          <ScrollAreaPrimitive.Scrollbar
+            orientation="vertical"
+            className="absolute top-2 right-1 bottom-2 flex w-1.5 touch-none rounded-full opacity-0 transition-opacity select-none group-hover/dialog:opacity-100"
           >
-            {THEME_OPTIONS.map((option) => (
-              <FieldLabel
-                key={option.value}
-                htmlFor={`theme-${option.value}`}
-                className="bg-card has-[button[data-checked]]:border-primary hover:border-foreground/25 has-[button:focus-visible]:border-ring has-[button:focus-visible]:ring-ring/50 flex w-full cursor-pointer flex-col gap-0 overflow-hidden rounded-lg border text-left shadow-none transition-colors has-[button:focus-visible]:ring-1"
-              >
-                <span className="relative block">
-                  <ThemePreview value={option.value} />
-                  {settings.theme === option.value && (
-                    <span className="bg-primary text-primary-foreground absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded-full">
-                      <CheckIcon className="size-3" />
-                    </span>
-                  )}
-                </span>
-                <span className="flex items-center justify-center gap-1.5 py-2 text-xs font-medium">
-                  <option.icon className="text-muted-foreground size-3.5" />
-                  {option.label}
-                </span>
-                <span className="sr-only">
-                  <RadioGroupItem value={option.value} id={`theme-${option.value}`} />
-                </span>
-              </FieldLabel>
-            ))}
-          </RadioGroup>
-        </div>
-
-        <div className="pt-6">
-          <p className="text-muted-foreground text-xs font-medium">Autosave</p>
-          <RadioGroup
-            className="bg-muted/50 has-[:focus-visible]:ring-ring/50 relative mt-3 grid grid-cols-6 gap-1 rounded-xl border p-1 has-[:focus-visible]:ring-2"
-            aria-label="Autosave"
-            value={autosaveKey(settings.autosave)}
-            onValueChange={(value) => {
-              const setting = parseAutosaveKey(value);
-              if (setting) void handleAutosaveChange(setting);
-            }}
-          >
-            {AUTOSAVE_OPTIONS.map((option) => (
-              <Label
-                key={option.key}
-                htmlFor={`autosave-${option.key}`}
-                className="text-foreground relative z-10 flex w-full cursor-pointer items-center justify-center rounded-lg px-2 py-2.5 text-xs font-medium select-none"
-              >
-                <span>{option.label}</span>
-                <span className="sr-only">
-                  <RadioGroupItem value={option.key} id={`autosave-${option.key}`} />
-                </span>
-              </Label>
-            ))}
-            <span
-              aria-hidden
-              className="seg-thumb seg-thumb-6"
-              style={{
-                transform: `translateX(calc(${activeAutosaveIndex * 100}% + ${activeAutosaveIndex * 4}px))`,
-                opacity: activeAutosaveIndex >= 0 ? 1 : 0,
-              }}
-            />
-          </RadioGroup>
-        </div>
-
-        <div className="pt-6">
-          <p className="text-muted-foreground text-xs font-medium">Startup</p>
-          <Field orientation="horizontal" className="mt-3">
-            <FieldContent>
-              <FieldLabel htmlFor="reopen-last-drawing">Reopen last drawing</FieldLabel>
-            </FieldContent>
-            <Switch
-              id="reopen-last-drawing"
-              checked={settings.reopenLastDrawing}
-              onCheckedChange={(value) => void handleReopenChange(value)}
-            />
-          </Field>
-        </div>
-
-        <div className="pt-6">
-          <p className="text-muted-foreground text-xs font-medium">App</p>
-          <Field orientation="horizontal" className="mt-3">
-            <FieldContent>
-              <FieldLabel htmlFor="show-recents">Show recent drawings</FieldLabel>
-            </FieldContent>
-            <Switch
-              id="show-recents"
-              checked={settings.showRecents}
-              onCheckedChange={(value) => void handleShowRecentsChange(value)}
-            />
-          </Field>
-        </div>
-
-        <div className="pt-6">
-          <p className="text-muted-foreground text-xs font-medium">Updates</p>
-          <Field orientation="horizontal" className="mt-3">
-            <FieldContent>
-              <FieldLabel htmlFor="auto-download-updates">
-                Download updates automatically
-              </FieldLabel>
-            </FieldContent>
-            <Switch
-              id="auto-download-updates"
-              checked={settings.autoDownloadUpdates}
-              onCheckedChange={(value) => void handleAutoDownloadChange(value)}
-            />
-          </Field>
-        </div>
-
-        <div className="pt-6">
-          <p className="text-muted-foreground text-xs font-medium">Agents</p>
-          <Field orientation="horizontal" className="mt-3">
-            <FieldContent>
-              <FieldLabel htmlFor="mcp-server">MCP</FieldLabel>
-              <FieldDescription className="font-mono text-xs break-all">
-                http://127.0.0.1:{MCP_PORT}/mcp
-              </FieldDescription>
-            </FieldContent>
-            <Switch
-              id="mcp-server"
-              checked={settings.mcpServer}
-              onCheckedChange={(value) => void handleMcpServerChange(value)}
-            />
-          </Field>
-        </div>
-
-        <div className="pt-6">
-          <p className="text-muted-foreground text-xs font-medium">Storage</p>
-          <Field orientation="horizontal" className="mt-3">
-            <FieldContent>
-              <FieldLabel>Drawings folder</FieldLabel>
-              <FieldDescription
-                className="font-mono text-xs break-all"
-                title={drawings?.path ?? undefined}
-              >
-                {drawings?.displayPath ?? "Not set"}
-              </FieldDescription>
-            </FieldContent>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="bevel"
-              disabled={pickingFolder}
-              onClick={() => void handleChangeFolder()}
-            >
-              <Folder className="size-3.5" />
-              {pickingFolder ? "Choosing…" : "Change…"}
-            </Button>
-          </Field>
-          {drawings?.missing && (
-            <FieldDescription className="text-destructive mt-2">
-              This folder can’t be found. Pick it again or choose a new one.
-            </FieldDescription>
-          )}
-        </div>
+            <ScrollAreaPrimitive.Thumb className="bg-border-quiet hover:bg-border-strong flex-1 rounded-full" />
+          </ScrollAreaPrimitive.Scrollbar>
+        </ScrollAreaPrimitive.Root>
       </DialogContent>
     </Dialog>
   );
