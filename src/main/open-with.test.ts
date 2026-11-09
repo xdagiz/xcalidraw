@@ -136,7 +136,10 @@ describe("createOpenPathQueue", () => {
     await vi.waitFor(() => {
       expect(deps.__sends).toEqual([
         { win: "main", outcomes: [{ status: "error", name: "bad.excalidraw", message: "boom" }] },
-        { win: "main", outcomes: [{ status: "open", id: "imported:good.excalidraw" }] },
+        {
+          win: "main",
+          outcomes: [{ status: "open", id: "imported:good.excalidraw", root: "/root" }],
+        },
       ]);
     });
   });
@@ -149,8 +152,8 @@ describe("createOpenPathQueue", () => {
     queue.flush();
     await vi.waitFor(() => {
       expect(deps.__sends).toEqual([
-        { win: "main", outcomes: [{ status: "open", id: "a.excalidraw" }] },
-        { win: "main", outcomes: [{ status: "open", id: "b.excalidraw" }] },
+        { win: "main", outcomes: [{ status: "open", id: "a.excalidraw", root: "/root" }] },
+        { win: "main", outcomes: [{ status: "open", id: "b.excalidraw", root: "/root" }] },
       ]);
     });
   });

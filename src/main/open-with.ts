@@ -1,3 +1,4 @@
+import { constants as fsConstants } from "node:fs";
 import { open, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 
@@ -7,6 +8,8 @@ import { isExcalidrawFileName } from "@shared/drawing-path";
 import { codedError } from "@shared/errors";
 import { FILE_NOT_FOUND_MESSAGE, MAX_DRAWING_CONTENT_BYTES, parentIdOf } from "@shared/ipc";
 import type { OpenPathOutcome, OpenPathsEvent } from "@shared/ipc";
+
+const isWindows = process.platform === "win32";
 
 export const extractOpenPaths = (argv: readonly string[], cwd = process.cwd()) => {
   const paths: string[] = [];
@@ -66,7 +69,8 @@ const tooLarge = () =>
   });
 
 const readDrawingContent = async (absPath: string) => {
-  const handle = await open(absPath, "r").catch(() => {
+  const flags = fsConstants.O_RDONLY | (isWindows ? 0 : fsConstants.O_NONBLOCK);
+  const handle = await open(absPath, flags).catch(() => {
     throw notFound();
   });
 
@@ -76,13 +80,26 @@ const readDrawingContent = async (absPath: string) => {
     if (stats.size > MAX_DRAWING_CONTENT_BYTES) throw tooLarge();
 
     const buffer = Buffer.allocUnsafe(MAX_DRAWING_CONTENT_BYTES + 1);
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    if (bytesRead > MAX_DRAWING_CONTENT_BYTES) throw tooLarge();
+    let offset = 0;
+    while (offset < buffer.length) {
+      const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, null);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
 
-    return buffer.subarray(0, bytesRead).toString("utf8");
+    if (offset > MAX_DRAWING_CONTENT_BYTES) throw tooLarge();
+
+    return buffer.subarray(0, offset).toString("utf8");
   } finally {
     await handle.close().catch(() => undefined);
   }
+};
+
+const IMPORTABLE_NAME_RE = /^[.\s]+/;
+
+const importableName = (absPath: string) => {
+  const trimmed = basename(absPath).trim().replace(IMPORTABLE_NAME_RE, "");
+  return isExcalidrawFileName(trimmed) ? trimmed : `Untitled.excalidraw`;
 };
 
 export const importExternalDrawing = async (
@@ -96,7 +113,7 @@ export const importExternalDrawing = async (
   const siblings = (await deps.listSiblings(root)).filter((entry) => parentIdOf(entry.id) === null);
   const name = nextImportName(
     siblings.map((entry) => entry.name),
-    basename(absPath).trim(),
+    importableName(absPath),
   );
 
   const entry = await deps.createDrawingWithContent(root, name, content);
@@ -154,7 +171,7 @@ export const createOpenPathQueue = (deps: OpenPathQueueDeps) => {
     try {
       const resolved = await deps.resolveId(root, item.path);
       const id = resolved ?? (await deps.importDrawing(item.path, root));
-      item.outcome = { status: "open", id };
+      item.outcome = { status: "open", id, root };
     } catch (error) {
       item.outcome = {
         status: "error",
@@ -178,7 +195,7 @@ export const createOpenPathQueue = (deps: OpenPathQueueDeps) => {
         }
 
         if (!item.outcome) {
-          const root = await deps.getRoot();
+          const root = await deps.getRoot().catch(() => null);
           if (!root) {
             scheduleRetry();
             return;

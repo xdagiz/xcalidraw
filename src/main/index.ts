@@ -560,10 +560,7 @@ void app.whenReady().then(async () => {
     writeDrawingFileRecover: withWatchIgnore(writeDrawingFileRecover),
     flushOpenPaths: () => openPathQueue.flush(),
     destroyWindow,
-    markWindowReady: (win) => {
-      markWindowReady(win);
-      openPathQueue.flush();
-    },
+    markWindowReady,
     cancelQuit,
     onDirtyState,
     onFlushStarted,

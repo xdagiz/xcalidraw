@@ -17,7 +17,9 @@ export const useOpenPaths = () => {
         }
       }
       const opened = outcomes.find((outcome) => outcome.status === "open");
-      if (opened?.status === "open") void useStore.getState().openFileWhenReady(opened.id);
+      if (opened?.status === "open") {
+        void useStore.getState().openFileWhenReady(opened.id, opened.root);
+      }
     });
     void window.api.app.flushOpenPaths().catch(() => undefined);
     return off;

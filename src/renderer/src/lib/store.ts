@@ -44,6 +44,39 @@ const isOpenableFile = (
   fileId.length > 0 &&
   entries.some((entry) => entry.id === fileId && entry.kind === "file");
 
+const DRAWING_WAIT_MS = 5_000;
+
+const looksWindowsPath = (value: string) => /^[a-zA-Z]:/.test(value) || value.includes("\\");
+
+const normalizeRoot = (value: string) => {
+  const slashed = value.replace(/\\/g, "/").replace(/\/+$/, "");
+  return looksWindowsPath(value) ? slashed.toLowerCase() : slashed;
+};
+
+const sameRoot = (a: string | null | undefined, b: string | null | undefined) =>
+  !a || !b || normalizeRoot(a) === normalizeRoot(b);
+
+const waitForDrawing = (fileId: string) =>
+  new Promise<boolean>((resolve) => {
+    const ready = (state: State) => state.startupLoaded && isOpenableFile(state.entries, fileId);
+
+    const finish = (found: boolean) => {
+      window.clearTimeout(timer);
+      unsubscribe();
+      resolve(found);
+    };
+
+    if (ready(useStore.getState())) {
+      resolve(true);
+      return;
+    }
+
+    const timer = window.setTimeout(() => finish(false), DRAWING_WAIT_MS);
+    const unsubscribe = useStore.subscribe((state) => {
+      if (ready(state)) finish(true);
+    });
+  });
+
 const upsertSorted = (entries: FileEntry[], entry: FileEntry, removeId = entry.id): FileEntry[] => {
   const withoutOld = entries.filter((e) => e.id !== removeId);
 
@@ -139,6 +172,7 @@ export type State = {
   externalConflict: ExternalConflict;
   watcherDown: string | null;
   isLoadingDrawings: boolean;
+  startupLoaded: boolean;
   pendingCanvasAction: boolean;
   scratchUnsaved: boolean;
   editorGeneration: number;
@@ -152,7 +186,7 @@ export type State = {
   applyEntries: (event: FilesChangedEvent) => void;
   reportWatcherError: (event: WatcherErrorEvent) => void;
   setOpenFileId: (fileId: string | null) => Promise<boolean>;
-  openFileWhenReady: (fileId: string) => Promise<boolean>;
+  openFileWhenReady: (fileId: string, root: string) => Promise<boolean>;
   openReservedFile: (fileId: string) => Promise<boolean>;
   openHome: () => Promise<void>;
   renameEntry: (id: string, newName: string) => Promise<FileEntry | null>;
@@ -378,6 +412,7 @@ export const useStore = create<State>((set, get) => {
     externalConflict: null,
     watcherDown: null,
     isLoadingDrawings: true,
+    startupLoaded: false,
     pendingCanvasAction: false,
     scratchUnsaved: false,
     editorGeneration: 0,
@@ -416,6 +451,7 @@ export const useStore = create<State>((set, get) => {
           error: null,
           watcherDown: null,
           isLoadingDrawings: false,
+          startupLoaded: true,
           pendingCanvasAction: false,
           scratchUnsaved: false,
           editorGeneration: state.editorGeneration + 1,
@@ -536,16 +572,17 @@ export const useStore = create<State>((set, get) => {
       }
     },
 
-    openFileWhenReady: async (fileId) => {
-      if (!isOpenableFile(get().entries, fileId)) {
-        try {
-          const snapshot = await window.api.drawings.load();
-          get().loadSnapshot(snapshot);
-        } catch (error) {
-          get().reportError(error, "load");
-          return false;
-        }
+    openFileWhenReady: async (fileId, root) => {
+      if (!sameRoot(get().drawings?.path, root)) {
+        toast.add({
+          title: "Couldn’t open drawing",
+          description: "The drawings folder changed while the file was opening.",
+          type: "error",
+        });
+        return false;
       }
+
+      if (!(await waitForDrawing(fileId))) return false;
 
       return get().setOpenFileId(fileId);
     },

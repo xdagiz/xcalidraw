@@ -327,7 +327,7 @@ export type LibraryReturnedEvent = {
 };
 
 export type OpenPathOutcome =
-  | { status: "open"; id: string }
+  | { status: "open"; id: string; root: string }
   | { status: "error"; name: string; message: string };
 
 export type OpenPathsEvent = {
