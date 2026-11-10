@@ -102,6 +102,15 @@ const importableName = (absPath: string) => {
   return isExcalidrawFileName(trimmed) ? trimmed : `Untitled.excalidraw`;
 };
 
+const isExistsError = (error: unknown) => {
+  if (typeof error !== "object" || error === null || !("details" in error)) return false;
+  const details = (error as { details?: unknown }).details;
+  if (typeof details !== "object" || details === null || !("reason" in details)) return false;
+  return (details as { reason?: unknown }).reason === "exists";
+};
+
+const MAX_IMPORT_NAME_ATTEMPTS = 5;
+
 export const importExternalDrawing = async (
   absPath: string,
   root: string,
@@ -110,14 +119,29 @@ export const importExternalDrawing = async (
   const content = await readDrawingContent(absPath);
   assertDrawingJson(content);
 
-  const siblings = (await deps.listSiblings(root)).filter((entry) => parentIdOf(entry.id) === null);
-  const name = nextImportName(
-    siblings.map((entry) => entry.name),
-    importableName(absPath),
-  );
+  const originalName = importableName(absPath);
 
-  const entry = await deps.createDrawingWithContent(root, name, content);
-  return entry.id;
+  for (let attempt = 0; attempt < MAX_IMPORT_NAME_ATTEMPTS; attempt += 1) {
+    const siblings = (await deps.listSiblings(root)).filter(
+      (entry) => parentIdOf(entry.id) === null,
+    );
+    const name = nextImportName(
+      siblings.map((entry) => entry.name),
+      originalName,
+    );
+
+    try {
+      const entry = await deps.createDrawingWithContent(root, name, content);
+      return entry.id;
+    } catch (error) {
+      if (!isExistsError(error)) throw error;
+    }
+  }
+
+  throw codedError("A file or folder with that name already exists", {
+    code: "INVALID",
+    reason: "exists",
+  });
 };
 
 export type OpenPathWindow = {

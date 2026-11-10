@@ -204,6 +204,8 @@ if (!gotTheLock) app.quit();
 
 registerAppScheme();
 
+const openPathListeners = new WeakSet<BrowserWindow>();
+
 const openPathQueue = createOpenPathQueue({
   getRoot: async () => {
     const info = await getDrawings();
@@ -211,7 +213,9 @@ const openPathQueue = createOpenPathQueue({
   },
   getReadyWindow: () => {
     const win = getMainWindow();
-    if (!win || win.isDestroyed() || !isWindowReady(win)) return null;
+    if (!win || win.isDestroyed() || !isWindowReady(win) || !openPathListeners.has(win)) {
+      return null;
+    }
     return win;
   },
   send: (win, outcomes) => {
@@ -558,9 +562,15 @@ void app.whenReady().then(async () => {
         deleteEntry(id, mode, hooks, (trashPath) => shell.trashItem(trashPath)),
     ),
     writeDrawingFileRecover: withWatchIgnore(writeDrawingFileRecover),
-    flushOpenPaths: () => openPathQueue.flush(),
+    flushOpenPaths: (win) => {
+      openPathListeners.add(win);
+      openPathQueue.flush();
+    },
     destroyWindow,
-    markWindowReady,
+    markWindowReady: (win) => {
+      openPathListeners.delete(win);
+      markWindowReady(win);
+    },
     cancelQuit,
     onDirtyState,
     onFlushStarted,
