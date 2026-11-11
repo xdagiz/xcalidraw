@@ -585,9 +585,7 @@ export const useStore = create<State>((set, get) => {
     },
 
     openFileWhenReady: async (fileId, root) => {
-      const settled = await waitForState(
-        (state) => state.startupLoaded || !state.isLoadingDrawings,
-      );
+      const settled = await waitForState((state) => !state.isLoadingDrawings);
       if (!settled) {
         toast.add({
           title: "Couldn’t open drawing",
