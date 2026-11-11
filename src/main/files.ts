@@ -14,13 +14,14 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 
+import { assertDrawingJson } from "@shared/drawing-content";
+import { isExcalidrawFileName } from "@shared/drawing-path";
 import { codedError, errorCodeOf } from "@shared/errors";
 import {
   FILE_NOT_FOUND_MESSAGE,
   MAX_DRAWING_CONTENT_BYTES,
   nextCopyName,
   parentIdOf,
-  validateDrawingRecord,
   type FileDeleteMode,
   type FileEntry,
   sortFileEntries,
@@ -225,8 +226,6 @@ export const atomicWriteFile = async (absPath: string, data: string, hooks?: FsM
     }
   }
 };
-
-const isExcalidrawFileName = (name: string) => name.toLowerCase().endsWith(".excalidraw");
 
 const validateEntryName = (name: string) => {
   const leaf = name.trim();
@@ -459,26 +458,6 @@ const requireDrawingsRoot = async () => {
 
 const EMPTY_DRAWING_CONTENT =
   '{"type":"excalidraw","version":2,"source":"xcalidraw","elements":[],"appState":{},"files":{}}';
-
-const assertDrawingJson = (content: string) => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(content);
-  } catch {
-    throw codedError("Drawing content is not valid JSON", {
-      code: "INVALID",
-      reason: "invalid-json",
-    });
-  }
-  try {
-    validateDrawingRecord(parsed);
-  } catch (error) {
-    throw codedError(error instanceof Error ? error.message : "Invalid drawing", {
-      code: "INVALID",
-      reason: "invalid-record",
-    });
-  }
-};
 
 const assertContentSize = (content: string) => {
   const bytes = Buffer.byteLength(content, "utf8");
@@ -1074,6 +1053,61 @@ export const copyEntry = async (
     return created;
   });
 
+const prepareNewEntry = async (
+  parentId: string | null,
+  name: string,
+  kind: "file" | "directory",
+  pinnedRoot?: string,
+) => {
+  const leaf = validateEntryName(name);
+  if (kind === "directory" && isExcalidrawFileName(leaf)) {
+    throw codedError("Folder names cannot end with .excalidraw", {
+      code: "INVALID",
+      reason: "bad-extension",
+      field: "name",
+    });
+  }
+
+  const root = pinnedRoot ? path.resolve(pinnedRoot) : await requireDrawingsRoot();
+  const rootReal = await realpath(root).catch((error) => {
+    if (errorCodeOf(error) !== "ENOENT") throw error;
+    throw codedError("Drawings folder is missing", { code: "NOT_FOUND", reason: "missing-root" });
+  });
+
+  let parentAbs = root;
+  if (parentId !== null) {
+    const normalizedParent = normalizeId(parentId);
+    assertSafeIdString(normalizedParent);
+
+    parentAbs = path.resolve(root, ...normalizedParent.split("/").filter(Boolean));
+    if (!contains(root, parentAbs)) {
+      throw codedError("Path escapes drawings root", { code: "INVALID", reason: "outside-root" });
+    }
+
+    await assertInsideRealRoot(rootReal, parentAbs);
+    await assertParentsNotSymlinks(root, rootReal, parentAbs);
+
+    const parentStats = await lstat(parentAbs).catch(() => null);
+    if (!parentStats || !parentStats.isDirectory() || parentStats.isSymbolicLink()) {
+      throw codedError("Parent folder not found", { code: "NOT_FOUND", reason: "missing-parent" });
+    }
+  }
+
+  const nameForFs = kind === "file" && !isExcalidrawFileName(leaf) ? `${leaf}.excalidraw` : leaf;
+  const nextAbs = path.join(parentAbs, nameForFs);
+  if (!contains(root, nextAbs)) {
+    throw codedError("Path escapes drawings root", { code: "INVALID", reason: "outside-root" });
+  }
+
+  const nextReal = await assertInsideRealRoot(rootReal, nextAbs);
+  await assertParentsNotSymlinks(root, rootReal, nextAbs);
+
+  const exists = await lstat(nextAbs).catch(() => null);
+  if (exists) throwExists();
+
+  return { root, nextAbs, nextReal };
+};
+
 export const createEntry = async (
   parentId: string | null,
   name: string,
@@ -1081,52 +1115,7 @@ export const createEntry = async (
   hooks?: FsMutationHooks,
 ): Promise<FileEntry> =>
   withFileMutationLock(async () => {
-    const leaf = validateEntryName(name);
-    if (kind === "directory" && isExcalidrawFileName(leaf)) {
-      throw codedError("Folder names cannot end with .excalidraw", {
-        code: "INVALID",
-        reason: "bad-extension",
-        field: "name",
-      });
-    }
-
-    const root = await requireDrawingsRoot();
-    const rootReal = await getCanonicalRoot();
-
-    let parentAbs = root;
-    if (parentId !== null) {
-      const normalizedParent = normalizeId(parentId);
-      assertSafeIdString(normalizedParent);
-
-      parentAbs = path.resolve(root, ...normalizedParent.split("/").filter(Boolean));
-      if (!contains(path.resolve(root), parentAbs)) {
-        throw codedError("Path escapes drawings root", { code: "INVALID", reason: "outside-root" });
-      }
-
-      await assertInsideRealRoot(rootReal, parentAbs);
-      await assertParentsNotSymlinks(root, rootReal, parentAbs);
-
-      const parentStats = await lstat(parentAbs).catch(() => null);
-      if (!parentStats || !parentStats.isDirectory() || parentStats.isSymbolicLink()) {
-        throw codedError("Parent folder not found", {
-          code: "NOT_FOUND",
-          reason: "missing-parent",
-        });
-      }
-    }
-
-    const nameForFs = kind === "file" && !isExcalidrawFileName(leaf) ? `${leaf}.excalidraw` : leaf;
-    const nextAbs = path.join(parentAbs, nameForFs);
-    if (!contains(path.resolve(root), nextAbs)) {
-      throw codedError("Path escapes drawings root", { code: "INVALID", reason: "outside-root" });
-    }
-
-    const nextReal = await assertInsideRealRoot(rootReal, nextAbs);
-    await assertParentsNotSymlinks(root, rootReal, nextAbs);
-
-    const exists = await lstat(nextAbs).catch(() => null);
-    if (exists) throwExists();
-
+    const { root, nextAbs, nextReal } = await prepareNewEntry(parentId, name, kind);
     if (kind === "directory") {
       hooks?.beforeMutate?.([nextReal]);
       await mkdir(nextReal);
@@ -1135,6 +1124,30 @@ export const createEntry = async (
     }
 
     return entryFromAbs(root, nextAbs, kind);
+  });
+
+export const createDrawingWithContent = async (
+  parentId: string | null,
+  name: string,
+  content: string,
+  options: { hooks?: FsMutationHooks; root?: string } = {},
+): Promise<FileEntry> =>
+  withFileMutationLock(async () => {
+    if (typeof content !== "string") {
+      throw codedError("Content must be a string", {
+        code: "INVALID",
+        reason: "invalid-arg",
+        field: "content",
+      });
+    }
+
+    assertContentSize(content);
+    assertDrawingJson(content);
+
+    const { root, nextAbs, nextReal } = await prepareNewEntry(parentId, name, "file", options.root);
+    await atomicWriteFile(nextReal, content, options.hooks);
+
+    return entryFromAbs(root, nextAbs, "file");
   });
 
 export const deleteEntry = async (

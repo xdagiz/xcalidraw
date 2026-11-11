@@ -44,6 +44,46 @@ const isOpenableFile = (
   fileId.length > 0 &&
   entries.some((entry) => entry.id === fileId && entry.kind === "file");
 
+const DRAWING_WAIT_MS = 5_000;
+
+const looksWindowsPath = (value: string) => /^[a-zA-Z]:/.test(value) || value.includes("\\");
+
+const normalizeRoot = (value: string) => {
+  const slashed = value.replace(/\\/g, "/").replace(/\/+$/, "");
+  return looksWindowsPath(value) ? slashed.toLowerCase() : slashed;
+};
+
+const sameRoot = (a: string | null | undefined, b: string | null | undefined) =>
+  typeof a === "string" && typeof b === "string" && normalizeRoot(a) === normalizeRoot(b);
+
+const reportRootChanged = () => {
+  toast.add({
+    title: "Couldn’t open drawing",
+    description: "The drawings folder changed while the file was opening.",
+    type: "error",
+  });
+  return false;
+};
+
+const waitForState = (isReady: (state: State) => boolean) =>
+  new Promise<boolean>((resolve) => {
+    if (isReady(useStore.getState())) {
+      resolve(true);
+      return;
+    }
+
+    const finish = (found: boolean) => {
+      window.clearTimeout(timer);
+      unsubscribe();
+      resolve(found);
+    };
+
+    const timer = window.setTimeout(() => finish(false), DRAWING_WAIT_MS);
+    const unsubscribe = useStore.subscribe((state) => {
+      if (isReady(state)) finish(true);
+    });
+  });
+
 const upsertSorted = (entries: FileEntry[], entry: FileEntry, removeId = entry.id): FileEntry[] => {
   const withoutOld = entries.filter((e) => e.id !== removeId);
 
@@ -139,6 +179,7 @@ export type State = {
   externalConflict: ExternalConflict;
   watcherDown: string | null;
   isLoadingDrawings: boolean;
+  startupLoaded: boolean;
   pendingCanvasAction: boolean;
   scratchUnsaved: boolean;
   editorGeneration: number;
@@ -151,7 +192,8 @@ export type State = {
   loadSnapshot: (snapshot: DrawingsSnapshot) => void;
   applyEntries: (event: FilesChangedEvent) => void;
   reportWatcherError: (event: WatcherErrorEvent) => void;
-  setOpenFileId: (fileId: string | null) => Promise<boolean>;
+  setOpenFileId: (fileId: string | null, expectedRoot?: string) => Promise<boolean>;
+  openFileWhenReady: (fileId: string, root: string) => Promise<boolean>;
   openReservedFile: (fileId: string) => Promise<boolean>;
   openHome: () => Promise<void>;
   renameEntry: (id: string, newName: string) => Promise<FileEntry | null>;
@@ -377,6 +419,7 @@ export const useStore = create<State>((set, get) => {
     externalConflict: null,
     watcherDown: null,
     isLoadingDrawings: true,
+    startupLoaded: false,
     pendingCanvasAction: false,
     scratchUnsaved: false,
     editorGeneration: 0,
@@ -415,6 +458,7 @@ export const useStore = create<State>((set, get) => {
           error: null,
           watcherDown: null,
           isLoadingDrawings: false,
+          startupLoaded: true,
           pendingCanvasAction: false,
           scratchUnsaved: false,
           editorGeneration: state.editorGeneration + 1,
@@ -488,13 +532,18 @@ export const useStore = create<State>((set, get) => {
       filesRevision = event.revision;
     },
 
-    setOpenFileId: async (fileId) => {
+    setOpenFileId: async (fileId, expectedRoot) => {
       const current = get().openFileId;
       if (fileId === current) return true;
+
+      const rootMatches = () =>
+        expectedRoot === undefined || sameRoot(get().drawings?.path, expectedRoot);
+      if (!rootMatches()) return false;
 
       const ok = await get().ensureCleanOrConfirm("switch");
       if (!ok) return false;
       await flushViewportPreferences();
+      if (!rootMatches()) return false;
 
       if (fileId === null) {
         set({ openFileId: null, error: null, externalConflict: null });
@@ -533,6 +582,37 @@ export const useStore = create<State>((set, get) => {
         });
         return false;
       }
+    },
+
+    openFileWhenReady: async (fileId, root) => {
+      const settled = await waitForState((state) => !state.isLoadingDrawings);
+      if (!settled) {
+        toast.add({
+          title: "Couldn’t open drawing",
+          description: "The app couldn’t load the drawings folder in time.",
+          type: "error",
+        });
+        return false;
+      }
+
+      if (!get().startupLoaded) return false;
+
+      if (!sameRoot(get().drawings?.path, root)) return reportRootChanged();
+
+      if (!(await waitForState((state) => isOpenableFile(state.entries, fileId)))) {
+        toast.add({
+          title: "Couldn’t open drawing",
+          description: "The drawing isn’t available yet.",
+          type: "error",
+        });
+        return false;
+      }
+
+      if (!sameRoot(get().drawings?.path, root)) return reportRootChanged();
+
+      const opened = await get().setOpenFileId(fileId, root);
+      if (!opened && !sameRoot(get().drawings?.path, root)) return reportRootChanged();
+      return opened;
     },
 
     openReservedFile: async (fileId) => {

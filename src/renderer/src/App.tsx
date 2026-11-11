@@ -17,6 +17,7 @@ import { ThemeProvider } from "./components/theme-provider";
 import { Button } from "./components/ui/button";
 import { SidebarInset, SidebarProvider } from "./components/ui/sidebar";
 import { toast } from "./components/ui/toast";
+import { useOpenPaths } from "./hooks/use-open-paths";
 import { useSwitcher } from "./hooks/use-switcher";
 
 const App = () => {
@@ -52,6 +53,7 @@ const App = () => {
   const conflictPromptRef = useRef<string | null>(null);
   const [pickingFolder, setPickingFolder] = useState(false);
   const switcher = useSwitcher({ paletteOpen, editorPaletteOpen });
+  useOpenPaths();
 
   const folderMissing = drawings?.missing === true && entries.length === 0 && !isLoadingDrawings;
 

@@ -23,6 +23,15 @@ const config = {
     "!{.jj,.codex,.pi,.scratch,docs}/**",
   ],
   electronLanguages: ["en-US"],
+  fileAssociations: [
+    {
+      ext: "excalidraw",
+      name: "Excalidraw Drawing",
+      description: "Excalidraw drawing",
+      role: "Editor",
+      mimeType: "application/x-excalidraw",
+    },
+  ],
   win: {
     executableName: "xcalidraw",
     icon: "assets/icon.ico",

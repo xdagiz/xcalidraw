@@ -7,6 +7,7 @@ import type {
   FileEntry,
   FilesChangedEvent,
   LibraryReturnedEvent,
+  OpenPathsEvent,
   RendererStoreKey,
   SettingsUpdate,
   StoreType,
@@ -27,6 +28,8 @@ export type { RendererStoreKey };
 export interface NativeApi {
   app: {
     quit: () => Promise<void>;
+    flushOpenPaths: () => Promise<void>;
+    onOpenPaths: (cb: (event: OpenPathsEvent) => void) => () => void;
   };
   drawings: {
     get: () => Promise<DrawingInfo>;

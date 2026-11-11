@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 
 import {
   APP_QUIT,
+  APP_OPEN_PATHS_FLUSH,
   CONTEXT_MENU_SHOW,
   DIALOG_FILE_CHANGED,
   DIALOG_FILE_RECOVER,
@@ -317,6 +318,7 @@ type Deps = {
     kind: "file" | "directory",
   ) => Promise<FileEntry>;
   deleteEntry: (id: string, mode: FileDeleteMode) => Promise<void>;
+  flushOpenPaths: (win: BrowserWindow) => void;
   destroyWindow: (win: BrowserWindow, requestId: number) => void;
   markWindowReady: (win: BrowserWindow) => void;
   cancelQuit: (win: BrowserWindow, requestId: number) => void;
@@ -580,6 +582,10 @@ export const registerIpcHandlers = (deps: Deps) => {
 
   handle(DRAWINGS_PICK, "folder", (event) => deps.pickDrawings(windowFromEvent(event)));
   handle(APP_QUIT, "unexpected", () => app.quit());
+  handle(APP_OPEN_PATHS_FLUSH, "unexpected", (event) => {
+    const win = windowFromEvent(event);
+    if (win) deps.flushOpenPaths(win);
+  });
 
   handle(CONTEXT_MENU_SHOW, "unexpected", async (event, request) => {
     const win = windowFromEvent(event);
