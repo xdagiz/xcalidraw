@@ -137,6 +137,12 @@ export type ImportFailure = {
   reason: string;
 };
 
+export type ImportDropOpenPolicy = "auto" | "always" | "never";
+
+export type ImportDropOptions = {
+  open?: ImportDropOpenPolicy;
+};
+
 export type ImportResult = {
   imported: ImportedEntry[];
   failed: ImportFailure[];
@@ -187,6 +193,7 @@ export type State = {
   importFileDrops: (
     parentId: string | null,
     files: readonly DroppedFile[],
+    options?: ImportDropOptions,
   ) => Promise<ImportResult>;
   createAndOpenEntry: (
     parentId: string | null,
@@ -702,7 +709,7 @@ export const useStore = create<State>((set, get) => {
       return entry.id;
     },
 
-    importFileDrops: async (parentId, files) => {
+    importFileDrops: async (parentId, files, options) => {
       const { drafts, rejected } = await readDroppedScenes(files);
       const failed = [...rejected];
       const imported: ImportedEntry[] = [];
@@ -726,7 +733,14 @@ export const useStore = create<State>((set, get) => {
       }
 
       const first = imported[0];
-      if (first && get().openFileId === null) await get().setOpenFileId(first.id);
+      const policy = options?.open ?? "auto";
+      const openFirst =
+        first !== undefined &&
+        (policy === "always" || (policy === "auto" && get().openFileId === null));
+      if (first && openFirst)
+        await get()
+          .setOpenFileId(first.id)
+          .catch(() => false);
 
       return { imported, failed };
     },

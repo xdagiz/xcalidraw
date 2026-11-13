@@ -45,6 +45,7 @@ import { TreeContainer, TreeRow, useFileTree, type FileTreeItem } from "@/compon
 import { UpdateIndicator } from "@/components/update-indicator";
 import { useExpandedFolders } from "@/hooks/use-expanded-folders";
 import { toAppError, type AppError } from "@/lib/app-error";
+import { registerSidebarDropSurface, type SidebarDropHit } from "@/lib/drop-surface";
 import { remapId } from "@/lib/entry-tree";
 import { formatRelativeTimeShort } from "@/lib/relative-time";
 import { useStore } from "@/lib/store";
@@ -225,6 +226,8 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
   const [freshDrawingId, setFreshDrawingId] = useState<string | null>(null);
   const [clipboard, setClipboard] = useState<TreeClipboard>(null);
   const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
+  const [externalDrop, setExternalDrop] = useState<{ parentId: string | null } | null>(null);
+  const sidebarRef = useRef<HTMLDivElement | null>(null);
   const renameValueRef = useRef<string>("");
   const listRef = useRef<HTMLDivElement | null>(null);
   const treeItemsRef = useRef(treeItems);
@@ -306,6 +309,46 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
       },
     };
   }, []);
+
+  const externalDropHit = useCallback(
+    (clientX: number, clientY: number): SidebarDropHit | null => {
+      const panel = sidebarRef.current;
+      if (!panel) return null;
+
+      const rect = panel.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return null;
+      if (
+        clientX < rect.left ||
+        clientX > rect.right ||
+        clientY < rect.top ||
+        clientY > rect.bottom
+      ) {
+        return null;
+      }
+
+      const hit = hitAtClientPoint(clientX, clientY);
+      if (!hit.inside) return { parentId: null, rowId: null };
+      return { parentId: hit.parentId, rowId: hit.row?.id ?? null };
+    },
+    [hitAtClientPoint],
+  );
+
+  useEffect(() => {
+    registerSidebarDropSurface({
+      hitTest: externalDropHit,
+      hover: (hit) =>
+        setExternalDrop((current) => {
+          if (hit === null) return current === null ? current : null;
+          return current?.parentId === hit.parentId ? current : { parentId: hit.parentId };
+        }),
+      reveal: (parentId) => {
+        if (parentId === null) return;
+        expandIds([...ancestorIdsOf(parentId), parentId]);
+      },
+    });
+
+    return () => registerSidebarDropSurface(null);
+  }, [expandIds, externalDropHit]);
 
   const stopDragScroll = useCallback(() => {
     dragPointerX.current = null;
@@ -913,11 +956,14 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
       ? firstVisibleRow + visibleRowCount
       : Math.max(firstVisibleRow + visibleRowCount, focusedTreeRow + 1);
   const visibleTreeItems = treeItems.slice(virtualStart, virtualEnd);
-  const hoveredParentId = dragPreview && !dragPreview.outside ? dragPreview.parentId : null;
-  const dropAllowed =
-    dragPreview !== null &&
-    !dragPreview.outside &&
-    canReparent(dragPreview.sourceId, hoveredParentId, entries).ok;
+  const hoveredParentId = dragPreview
+    ? dragPreview.outside
+      ? null
+      : dragPreview.parentId
+    : (externalDrop?.parentId ?? null);
+  const dropAllowed = dragPreview
+    ? !dragPreview.outside && canReparent(dragPreview.sourceId, hoveredParentId, entries).ok
+    : externalDrop !== null;
   const dropFolderId = dropAllowed ? hoveredParentId : null;
   let dropRegion: { top: number; height: number } | null = null;
   if (dropFolderId !== null) {
@@ -951,7 +997,7 @@ export const AppSidebar = ({ onOpenSettings }: { onOpenSettings: () => void }) =
         </div>
       ) : null}
 
-      <Sidebar side="left" variant="floating">
+      <Sidebar ref={sidebarRef} side="left" variant="floating" data-drop-surface="sidebar">
         <SidebarHeader className="pb-0">
           <SidebarGroupLabel className="flex items-center justify-between">
             {showRecents ? (

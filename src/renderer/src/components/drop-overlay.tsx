@@ -1,9 +1,17 @@
 import { CircleCheckIcon, FileUpIcon, Loader2Icon, TriangleAlertIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { toast } from "@/components/ui/toast";
+import {
+  canvasDropZone,
+  dropDestinationLabel,
+  resolveDropZone,
+  type DropZone,
+} from "@/lib/drop-destination";
 import { MAX_DROP_FILES, isSceneFile } from "@/lib/drop-import";
+import { getSidebarDropSurface } from "@/lib/drop-surface";
 import { useStore, type ImportResult } from "@/lib/store";
+import { buildEntriesById } from "@/lib/tree";
 import { cn } from "@/lib/utils";
 
 type Phase = "idle" | "hover" | "importing" | "done" | "failed";
@@ -16,24 +24,34 @@ const holdsFiles = (event: DragEvent) =>
 const plural = (count: number, one: string, many: string) =>
   count === 1 ? one : many.replace("%n", String(count));
 
-const summaryText = (result: ImportResult) => {
+const summaryText = (result: ImportResult, destination: string | null = null) => {
   const { imported, failed } = result;
+  const to = destination === null ? "" : ` to ${destination}`;
   if (imported.length === 0 && failed.length === 0) return "Nothing to import";
   if (imported.length === 0) return `${plural(failed.length, "1 file", "%n files")} skipped`;
-  if (failed.length === 0) return `Added ${plural(imported.length, "1 drawing", "%n drawings")}`;
-  return `Added ${imported.length}, skipped ${failed.length}`;
+  if (failed.length === 0)
+    return `Added ${plural(imported.length, "1 drawing", "%n drawings")}${to}`;
+  return `Added ${imported.length}${to}, skipped ${failed.length}`;
 };
 
 export const DropOverlay = () => {
   const importFileDrops = useStore((state) => state.importFileDrops);
+  const entries = useStore((state) => state.entries);
   const [phase, setPhase] = useState<Phase>("idle");
   const [hovered, setHovered] = useState(0);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [zone, setZone] = useState<DropZone>(canvasDropZone);
 
   const phaseRef = useRef(phase);
   const depthRef = useRef(0);
   const settleRef = useRef<number | null>(null);
   const importRef = useRef(importFileDrops);
+  const entriesById = useMemo(() => buildEntriesById(entries), [entries]);
+  const entriesByIdRef = useRef(entriesById);
+
+  useEffect(() => {
+    entriesByIdRef.current = entriesById;
+  }, [entriesById]);
 
   useEffect(() => {
     phaseRef.current = phase;
@@ -53,8 +71,22 @@ export const DropOverlay = () => {
     const reset = () => {
       depthRef.current = 0;
       clearSettle();
+      getSidebarDropSurface()?.hover(null);
+      setZone(canvasDropZone);
       setPhase("idle");
       setResult(null);
+    };
+
+    const syncZone = (clientX: number, clientY: number) => {
+      const surface = getSidebarDropSurface();
+      const hit = surface ? surface.hitTest(clientX, clientY) : null;
+      surface?.hover(hit);
+
+      const next = resolveDropZone(hit);
+      setZone((current) =>
+        current.kind === next.kind && current.parentId === next.parentId ? current : next,
+      );
+      return next;
     };
 
     const settle = () => {
@@ -66,13 +98,15 @@ export const DropOverlay = () => {
       }, SETTLE_MS);
     };
 
-    const runImport = async (files: File[]) => {
+    const runImport = async (files: File[], dropZone: DropZone) => {
       setHovered(files.length);
       setPhase("importing");
 
       let imported: ImportResult;
       try {
-        imported = await importRef.current(null, files);
+        imported = await importRef.current(dropZone.parentId, files, {
+          open: dropZone.kind === "canvas" ? "always" : "never",
+        });
       } catch (error) {
         imported = {
           imported: [],
@@ -86,15 +120,21 @@ export const DropOverlay = () => {
       setResult(imported);
       setPhase(imported.imported.length > 0 ? "done" : "failed");
 
+      const destination =
+        dropZone.kind === "sidebar"
+          ? dropDestinationLabel(dropZone.parentId, entriesByIdRef.current)
+          : null;
+
       if (imported.imported.length > 0) {
         toast.add({
-          title: summaryText(imported),
+          title: summaryText(imported, destination),
           description:
             imported.imported.length === 1
               ? imported.imported[0].name.replace(/\.excalidraw$/i, "")
               : undefined,
           type: "success",
         });
+        if (dropZone.kind === "sidebar") getSidebarDropSurface()?.reveal(dropZone.parentId);
       }
 
       const [firstFailure] = imported.failed;
@@ -120,6 +160,7 @@ export const DropOverlay = () => {
         clearSettle();
         setResult(null);
       }
+      syncZone(event.clientX, event.clientY);
       setHovered(Math.max(event.dataTransfer?.items.length ?? 1, 1));
       setPhase("hover");
     };
@@ -127,6 +168,7 @@ export const DropOverlay = () => {
     const handleDragOver = (event: DragEvent) => {
       if (!holdsFiles(event)) return;
       event.preventDefault();
+      if (phaseRef.current === "hover") syncZone(event.clientX, event.clientY);
       if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
     };
 
@@ -135,6 +177,7 @@ export const DropOverlay = () => {
       depthRef.current = Math.max(depthRef.current - 1, 0);
       if (depthRef.current > 0) return;
       if (phaseRef.current !== "hover") return;
+      getSidebarDropSurface()?.hover(null);
       setPhase("idle");
       setResult(null);
     };
@@ -153,6 +196,8 @@ export const DropOverlay = () => {
         event.preventDefault();
         event.stopPropagation();
         depthRef.current = 0;
+        syncZone(event.clientX, event.clientY);
+        getSidebarDropSurface()?.hover(null);
         setResult({
           imported: [],
           failed: files.map((file) => ({
@@ -173,7 +218,9 @@ export const DropOverlay = () => {
       event.preventDefault();
       event.stopPropagation();
       depthRef.current = 0;
-      void runImport(scenes.slice(0, MAX_DROP_FILES));
+      const dropZone = syncZone(event.clientX, event.clientY);
+      getSidebarDropSurface()?.hover(null);
+      void runImport(scenes.slice(0, MAX_DROP_FILES), dropZone);
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -199,6 +246,7 @@ export const DropOverlay = () => {
   }, []);
 
   if (phase === "idle") return null;
+  if (zone.kind === "sidebar") return null;
 
   const importing = phase === "importing";
   const done = phase === "done";
